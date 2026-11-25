@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# git wrapper for offline tests: records and fakes "push" (exit $FAKE_GIT_PUSH_RC, default 0);
+# every other command runs the real git at $FAKE_REAL_GIT.
+if [ "${1:-}" = push ]; then printf 'git %s\n' "$*" >>"${FAKE_GH_DIR:?}/log"; exit "${FAKE_GIT_PUSH_RC:-0}"; fi
+exec "${FAKE_REAL_GIT:?}" "$@"
