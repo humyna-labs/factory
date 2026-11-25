@@ -1,5 +1,7 @@
 // One git worktree per task (R-03). The coordinator creates it; every role runs with it as cwd.
-import { existsSync } from "node:fs";
+// BL-05 / W2-05: product clones push through the factory pre-push hook, the worktree starts from
+// the freshly fetched remote base, and finished worktrees are removed.
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Exec } from "../exec.ts";
 import type { Issue, LedgerRole } from "../types.ts";
@@ -9,6 +11,11 @@ export interface WorkspaceOptions {
   worktreesDir: string;
   baseBranch: string;
   remote: string;
+  /**
+   * Directory set as core.hooksPath on the product clone (the factory .githooks, R-07). The dry
+   * run leaves it unset because its local bare remote is not a GitHub URL, which the hook refuses.
+   */
+  pushHookPath?: string;
 }
 
 export class GitWorkspace {
@@ -29,11 +36,34 @@ export class GitWorkspace {
     return `factory/${issue.repo}-${issue.number}`;
   }
 
-  async prepare(issue: Issue): Promise<{ worktree: string; branch: string }> {
+  worktreeFor(issue: Issue): string {
+    return join(this.o.worktreesDir, `${issue.repo}-${issue.number}`);
+  }
+
+  /** The remote-tracking base, for example origin/main. */
+  get base(): string {
+    return `${this.o.remote}/${this.o.baseBranch}`;
+  }
+
+  async prepare(issue: Issue): Promise<{ worktree: string; branch: string; reused: boolean }> {
     const branch = this.branchFor(issue);
-    const worktree = join(this.o.worktreesDir, `${issue.repo}-${issue.number}`);
-    if (!existsSync(worktree)) await this.git(this.o.repoDir, ["worktree", "add", "-B", branch, worktree, this.o.baseBranch]);
-    return { worktree, branch };
+    const worktree = this.worktreeFor(issue);
+    if (this.o.pushHookPath) await this.git(this.o.repoDir, ["config", "core.hooksPath", this.o.pushHookPath]);
+    if (existsSync(worktree)) return { worktree, branch, reused: true };
+    await this.git(this.o.repoDir, ["fetch", "-q", this.o.remote]);
+    await this.git(this.o.repoDir, ["worktree", "add", "-q", "-B", branch, worktree, this.base]);
+    return { worktree, branch, reused: false };
+  }
+
+  /** Remove a finished worktree; the local branch stays for diagnosis. */
+  async cleanup(worktree: string): Promise<void> {
+    if (existsSync(worktree)) await this.git(this.o.repoDir, ["worktree", "remove", "--force", worktree]);
+    await this.git(this.o.repoDir, ["worktree", "prune"]);
+  }
+
+  /** Worktree directories still on disk (needs-human tasks, or tasks stopped mid-way). */
+  kept(): string[] {
+    return existsSync(this.o.worktreesDir) ? readdirSync(this.o.worktreesDir).sort() : [];
   }
 
   /** Paths changed in the worktree since the last commit, including untracked files. */
@@ -50,7 +80,7 @@ export class GitWorkspace {
   }
 
   async reset(worktree: string): Promise<void> {
-    await this.git(worktree, ["reset", "--hard", "HEAD"]);
+    await this.git(worktree, ["reset", "-q", "--hard", "HEAD"]);
     await this.git(worktree, ["clean", "-fdq"]);
   }
 
@@ -63,7 +93,7 @@ export class GitWorkspace {
   }
 
   async filesChangedFromBase(worktree: string): Promise<string[]> {
-    return (await this.git(worktree, ["diff", "--name-only", `${this.o.baseBranch}...HEAD`])).split("\n").filter(Boolean);
+    return (await this.git(worktree, ["diff", "--name-only", `${this.base}...HEAD`])).split("\n").filter(Boolean);
   }
 
   async push(worktree: string, branch: string): Promise<void> {

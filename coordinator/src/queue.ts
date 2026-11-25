@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runTask, type Deps, type TaskResult } from "./coordinator.ts";
 import { isoUtc } from "./runs-csv.ts";
-import { stateLabel } from "./state.ts";
+import { STAGES, stateLabel } from "./state.ts";
 import { taskId, type Issue } from "./types.ts";
 
 export function priorityOf(i: Issue): number {
@@ -28,6 +28,10 @@ export interface Digest {
   stopped: TaskResult[];
   skippedBlocked: { task: string; reason: string }[];
   notStarted: string[];
+  /** Tasks resumed from a factory:<stage> label after an interruption (W2-06). */
+  resumed: string[];
+  /** Worktrees still on disk at the end, mostly needs-human tasks (W2-05). */
+  keptWorktrees: string[];
   blockedActions: number;
   costUsd: number;
   turns: number;
@@ -38,8 +42,12 @@ export async function runQueue(d: Deps, maxHours: number): Promise<Digest> {
   const deadline = new Date(started.getTime() + maxHours * 3_600_000);
   const deps: Deps = { ...d, deadline };
   const [owner, repo] = d.cfg.repo.split("/") as [string, string];
-  const ready = orderTasks(await d.gh.listOpenIssues(owner, repo, stateLabel("ready")));
-  const dg: Digest = { started: isoUtc(started), ended: "", done: [], needsHuman: [], escalated: [], stopped: [], skippedBlocked: [], notStarted: [], blockedActions: 0, costUsd: 0, turns: 0 };
+  // W2-06: tasks interrupted mid-stage come first, in stage order, then the ready queue.
+  const inFlight: Issue[] = [];
+  for (const s of STAGES) inFlight.push(...orderTasks(await d.gh.listOpenIssues(owner, repo, stateLabel(s))));
+  const seen = new Set(inFlight.map((i) => i.number));
+  const ready = [...inFlight, ...orderTasks(await d.gh.listOpenIssues(owner, repo, stateLabel("ready"))).filter((i) => !seen.has(i.number))];
+  const dg: Digest = { started: isoUtc(started), ended: "", done: [], needsHuman: [], escalated: [], stopped: [], skippedBlocked: [], notStarted: [], resumed: [], keptWorktrees: [], blockedActions: 0, costUsd: 0, turns: 0 };
   for (const issue of ready) {
     if (d.now() >= deadline) {
       dg.notStarted.push(taskId(issue));
@@ -67,11 +75,14 @@ export async function runQueue(d: Deps, maxHours: number): Promise<Digest> {
     dg.blockedActions += r.blockedActions;
     dg.costUsd += r.costUsd;
     dg.turns += r.turns;
-    if (r.stoppedForTime) dg.stopped.push(r);
+    if (r.resumed) dg.resumed.push(r.task);
+    if (r.resumeLoop) dg.skippedBlocked.push({ task: r.task, reason: `interrupted twice at ${r.final}; resume loop, needs a look` });
+    else if (r.stoppedForTime) dg.stopped.push(r);
     else if (r.final === "auto-merge") dg.done.push(r);
     else if (r.final === "needs-human") dg.needsHuman.push(r);
     else if (r.final === "escalated") dg.escalated.push(r);
   }
+  dg.keptWorktrees = d.workspace.kept();
   dg.ended = isoUtc(d.now());
   return dg;
 }
@@ -91,6 +102,8 @@ export function formatDigest(dg: Digest): string {
     `Skipped, blocked (${dg.skippedBlocked.length}):`,
     ...(dg.skippedBlocked.length ? dg.skippedBlocked.map((s) => `  - ${s.task} ${s.reason}`) : ["  - none"]),
     `Not started, time budget (${dg.notStarted.length}): ${dg.notStarted.join(", ") || "none"}`,
+    `Resumed after an interruption (${dg.resumed.length}): ${dg.resumed.join(", ") || "none"}`,
+    `Worktrees kept (${dg.keptWorktrees.length}): ${dg.keptWorktrees.join(", ") || "none"}`,
     `Blocked actions: ${dg.blockedActions}`,
     `Cost: ${dg.costUsd.toFixed(4)} USD over ${dg.turns} turns`,
   ].join("\n");

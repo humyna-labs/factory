@@ -1,13 +1,14 @@
 // Deterministic stand-in for role sessions (spec 3.7: integration tests with stub roles).
 // It writes the files a real role would write, plus its report, according to a scenario.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Role } from "../types.ts";
 import type { RoleResult, RoleRunner, RoleSession } from "./types.ts";
 
 /** pass: do the job. fail: report failure. no-report: do the job but skip the report.
- *  out-of-scope: also write a file the role may not write. */
-export type StubStep = "pass" | "fail" | "no-report" | "out-of-scope";
+ *  out-of-scope: also write a file the role may not write.
+ *  hang-once: the first time, hang until the process is killed (resume test, W2-06); later, pass. */
+export type StubStep = "pass" | "fail" | "no-report" | "out-of-scope" | "hang-once";
 export type Scenario = Partial<Record<Role | "verify" | "red", StubStep[]>> & { changes?: string[] };
 export type Scenarios = Record<string, Scenario>;
 
@@ -53,7 +54,16 @@ export class StubRunner implements RoleRunner {
     this.onSession?.(s);
     const id = `${s.issue.repo}#${s.issue.number}`;
     const sc = this.scenarios[id] ?? {};
-    const step = stepFor(sc[s.role], s.attempt);
+    let step = stepFor(sc[s.role], s.attempt);
+    if (step === "hang-once") {
+      const marker = join(dirname(s.reportPath), `.hang-once-${s.stage}-${s.attempt}`);
+      if (!existsSync(marker)) {
+        mkdirSync(dirname(marker), { recursive: true });
+        writeFileSync(marker, "");
+        await new Promise((r) => setTimeout(r, 3_600_000));
+      }
+      step = "pass";
+    }
     const slug = `issue-${s.issue.number}`;
     if (s.role === "qa") write(s.worktree, `tests/unit/${slug}.test.ts`, `// stub test for ${id}\nexport {};\n`);
     if (s.role === "builder") {

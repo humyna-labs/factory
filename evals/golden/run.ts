@@ -46,7 +46,7 @@ export async function runGoldenCase(dir: string): Promise<CaseResult> {
     const issue = [...r.gh.issues.values()].find((i) => i.repo === fixture.product && i.number === fixture.issues[0]?.number);
     const labels = issue?.labels.filter((l) => l.startsWith("factory:")) ?? [];
     if (JSON.stringify(labels) !== JSON.stringify(expected.labels)) problems.push(`labels ${labels.join(",")} != ${expected.labels.join(",")}`);
-    const reports = readdirSync(r.paths.reportsDir, { recursive: true }).filter((f) => String(f).endsWith(".md")).length;
+    const reports = readdirSync(r.paths.reportsDir, { recursive: true }).filter((f) => String(f).endsWith(".md") && String(f).includes("/")).length; // role reports only, not INDEX.md (W2-10)
     if (reports !== expected.reports) problems.push(`reports ${reports} != ${expected.reports}`);
   } finally {
     rmSync(runsDir, { recursive: true, force: true });
