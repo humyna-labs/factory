@@ -42,6 +42,9 @@ export function buildClaudeInvocation(s: RoleSession, rc: RoleConfig, o: Pick<Cl
     "--output-format",
     "stream-json",
     "--verbose",
+    // The report file lives outside the worktree (R-20); make that one directory reachable.
+    "--add-dir",
+    o.reportsDir,
   ];
   if (rc.disallowedTools.length) args.push("--disallowedTools", rc.disallowedTools.join(","));
   return {
@@ -80,7 +83,9 @@ export function summarizeStream(lines: string[]): StreamSummary {
     s.subtype = typeof ev.subtype === "string" ? ev.subtype : "unknown";
     s.turns = typeof ev.num_turns === "number" ? ev.num_turns : 0;
     s.costUsd = typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : 0;
-    s.permissionDenials = Array.isArray(ev.permission_denials) ? ev.permission_denials.length : 0;
+    // Verified on Claude Code 2.1.331 (one live call, 2026-11-25): permission_denials is an
+    // array and safety_stops is a number on the result event. Both count as blocked actions.
+    s.permissionDenials = (Array.isArray(ev.permission_denials) ? ev.permission_denials.length : 0) + (typeof ev.safety_stops === "number" ? ev.safety_stops : 0);
     s.finalText = typeof ev.result === "string" ? ev.result : "";
   }
   return s;

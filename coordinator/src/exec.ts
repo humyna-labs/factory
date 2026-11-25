@@ -56,5 +56,7 @@ export const exec: Exec = (cmd, args, opts = {}) =>
       if (pending && opts.onStdoutLine) opts.onStdoutLine(pending);
       resolve({ code: code ?? 1, stdout, stderr, timedOut });
     });
+    // A child may exit before reading stdin; that is not an error of ours.
+    child.stdin.on("error", () => undefined);
     child.stdin.end(opts.input ?? "");
   });

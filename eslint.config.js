@@ -11,6 +11,7 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node } },
     rules: {
       "no-console": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       "no-restricted-syntax": [
         "error",
         {
@@ -22,7 +23,8 @@ export default tseslint.config(
     },
   },
   {
-    files: ["coordinator/src/env.ts"],
+    // Tests may pass PATH to the child processes they spawn.
+    files: ["coordinator/src/env.ts", "**/test/**/*.ts"],
     rules: { "no-restricted-syntax": "off" },
   },
 );
