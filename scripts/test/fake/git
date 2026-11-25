@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
-# git wrapper for offline tests: records and fakes "push" (exit $FAKE_GIT_PUSH_RC, default 0);
-# every other command runs the real git at $FAKE_REAL_GIT.
-if [ "${1:-}" = push ]; then printf 'git %s\n' "$*" >>"${FAKE_GH_DIR:?}/log"; exit "${FAKE_GIT_PUSH_RC:-0}"; fi
+# git wrapper for offline tests: records and fakes "push" (exit $FAKE_GIT_PUSH_RC, default 0).
+# For each pushed source ref it also records the commit, its parent and its files, so tests can
+# check what would have reached GitHub. Every other command runs the real git at $FAKE_REAL_GIT.
+if [ "${1:-}" = push ]; then
+  log=${FAKE_GH_DIR:?}/log
+  printf 'git %s\n' "$*" >>"$log"
+  for a in "$@"; do
+    case "$a" in refs/heads/*) src=${a%%:*}
+      printf 'pushed %s commit=%s parent=%s\n' "$src" "$("${FAKE_REAL_GIT:?}" rev-parse "$src")" "$("${FAKE_REAL_GIT:?}" rev-parse "$src^")" >>"$log"
+      "${FAKE_REAL_GIT:?}" ls-tree -r --name-only "$src" | sed 's/^/pushed-file /' >>"$log" ;;
+    esac
+  done
+  if [ -n "${FAKE_GIT_PUSH_HANG:-}" ]; then exec sleep 60; fi
+  exit "${FAKE_GIT_PUSH_RC:-0}"
+fi
 exec "${FAKE_REAL_GIT:?}" "$@"

@@ -1,4 +1,4 @@
-// Mutation check for scripts/lib/guards.sh (G-03, W2-02): disable each GUARD block in a scratch
+// Mutation check for scripts/lib/guards.sh (G-03, W2-02, D2-night N2): disable each GUARD block in a scratch
 // copy and show that at least one case of that guard changes its decision.
 import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +17,7 @@ function disable(source: string, id: string): string {
 
 describe("mutation check: scripts/lib/guards.sh", () => {
   it("has the expected guards, each with cases", () => {
-    expect(ids).toEqual(["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12"]);
+    expect(ids).toEqual(["G1", "G2", "G3", "G4", "G5", "G16", "G6", "G7", "G17", "G18", "G19", "G8", "G9", "G10", "G13", "G14", "G15", "G11", "G12", "G20"]);
     for (const id of ids) expect(GUARD_CASES.some((c) => c.guard === id && c.expect === "refuse"), id).toBe(true);
   });
   it.each(ids)("disabling %s flips at least one decision", (id) => {

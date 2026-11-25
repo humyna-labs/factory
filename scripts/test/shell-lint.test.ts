@@ -1,9 +1,11 @@
 // R-08: every shell script parses; human scripts are ASCII and bash-3.2 compatible (static check:
 // no bash 3.2 is available in this image), have --dry-run, and time-limit network calls.
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { reviewedClone } from "./flow-kit.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const tracked = execFileSync("git", ["ls-files", "-co", "--exclude-standard"], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
@@ -69,10 +71,15 @@ describe("the lint itself catches what it claims (G-03)", () => {
 });
 
 describe("human scripts run in dry-run mode (offline)", () => {
-  const run = (args: string[]) => spawnSync("bash", args, { cwd: ROOT, encoding: "utf8" });
+  // Dry runs check the checkout too (Codex 1, N2b), so they run from a scratch reviewed clone:
+  // main tracking origin/main, clean, origin a local bare repo.
+  const clone = reviewedClone(ROOT);
+  const home = mkdtempSync(join(tmpdir(), "dry-home-"));
+  const run = (args: string[], cwd = clone) => spawnSync("bash", args, { cwd, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, GIT_CONFIG_NOSYSTEM: "1" } });
   it("setup-repo --dry-run prints the plan and a valid ruleset JSON, changes nothing", () => {
     const r = run(["scripts/setup-repo.sh", "humyna-labs/resume-sg", "--dry-run"]);
     expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/^Running scripts from commit [0-9a-f]{40}\./m);
     const json = r.stdout.split("with body:\n")[1]?.split("\nDRY  self-check")[0] ?? "";
     const body = JSON.parse(json);
     expect(body.rules.map((x: { type: string }) => x.type)).toEqual(["deletion", "non_fast_forward", "pull_request", "required_status_checks"]);
@@ -88,6 +95,7 @@ describe("human scripts run in dry-run mode (offline)", () => {
   });
   it("factory profile has no required status checks (the factory has no CI yet)", () => {
     const r = run(["scripts/setup-repo.sh", "humyna-labs/factory", "--dry-run"]);
+    expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toContain("profile=factory");
     expect(r.stdout).not.toContain("required_status_checks");
   });
@@ -98,9 +106,27 @@ describe("human scripts run in dry-run mode (offline)", () => {
     expect(real.stderr).toMatch(/must run on the host/);
   });
   it("install-workflows --dry-run previews the copy from a local checkout", () => {
-    const r = run(["scripts/install-workflows.sh", "humyna-labs/factory", "--dry-run", "--source", "."]);
+    const r = run(["scripts/install-workflows.sh", "humyna-labs/factory", "--dry-run", "--source", clone]);
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/^(COPY ci\/workflows\/gates\.yml -> \.github\/workflows\/gates\.yml|SAME gates\.yml is already installed)$/m);
+    expect(r.stdout).toContain("COPY ci/workflows/gates.yml -> .github/workflows/gates.yml");
+  });
+  it.each([
+    ["a feature branch", ["checkout", "-q", "-b", "feature"], /is on refs\/heads\/feature, not main/],
+    ["an untracked file", null, /uncommitted or untracked changes/],
+  ] as const)("dry runs refuse a checkout on %s (Codex 1, 5)", (_n, gitArgs, why) => {
+    const c = reviewedClone(ROOT);
+    if (gitArgs) spawnSync("git", [...gitArgs], { cwd: c });
+    else writeFileSync(join(c, "scripts", "x.sh"), "echo\n");
+    for (const script of ["scripts/setup-repo.sh", "scripts/install-workflows.sh"]) {
+      const r = run([script, "humyna-labs/resume-sg", "--dry-run"], c);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(why);
+    }
+  });
+  it("the container's own working copy is not a reviewed clone, so even its dry run refuses", () => {
+    const r = spawnSync("bash", ["scripts/setup-repo.sh", "humyna-labs/resume-sg", "--dry-run"], { cwd: ROOT, encoding: "utf8" });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/REFUSED/);
   });
   it("labels file covers every coordinator state", () => {
     const labels = readFileSync(join(ROOT, "scripts", "labels.txt"), "utf8");
