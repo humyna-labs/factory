@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# pre-push (R-07): agents push feature branches of humyna-labs repositories only, with small
+# ASCII commits that carry an Agent-Role trailer and the machine account as author.
+# Git calls it as: pre-push <remote-name> <remote-url>, with "<local ref> <local sha>
+# <remote ref> <remote sha>" lines on stdin. Enable with: git config core.hooksPath .githooks
+set -u
+ALLOWED_OWNER=humyna-labs
+MAX_FILES_PER_COMMIT=${FACTORY_MAX_FILES_PER_COMMIT:-40}
+url=${2:-}
+zero=0000000000000000000000000000000000000000
+
+fail() { printf 'pre-push: REJECTED: %s\n' "$1" >&2; exit 1; }
+
+# Owner from https://github.com/OWNER/repo(.git), git@github.com:OWNER/repo, ssh://git@github.com/OWNER/repo
+owner=$(printf '%s' "$url" | sed -nE 's#^(https://([^@/]+@)?github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+)/[^/]+$#\3#p')
+[ -n "$owner" ] || fail "remote URL '${url}' is not a GitHub repository URL; refusing to push"
+[ "$owner" = "$ALLOWED_OWNER" ] || fail "remote owner '${owner}' is not ${ALLOWED_OWNER}"
+
+author_email=$(git config user.email || true)
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_ref:-}" ] || continue
+  case "$remote_ref" in
+    refs/heads/main | refs/heads/master) fail "agents never push ${remote_ref#refs/heads/}; open a pull request from a feature branch" ;;
+    refs/heads/*) ;;
+    *) fail "only branches may be pushed (got ${remote_ref}); tags are made by the human" ;;
+  esac
+  [ "$local_sha" = "$zero" ] && fail "deleting remote branches is not allowed from the factory"
+  if [ "$remote_sha" = "$zero" ]; then range=$(git rev-list "$local_sha" --not --remotes) ; else range=$(git rev-list "$remote_sha..$local_sha"); fi
+  for c in $range; do
+    msg=$(git log -1 --format=%B "$c")
+    if printf '%s' "$msg" | LC_ALL=C grep -q '[^ -~[:space:]]'; then fail "commit ${c} message is not ASCII"; fi
+    printf '%s\n' "$msg" | grep -Eq '^Agent-Role: [a-z-]+$' || fail "commit ${c} has no 'Agent-Role: <role>' trailer"
+    a=$(git log -1 --format=%ae "$c")
+    [ -z "$author_email" ] || [ "$a" = "$author_email" ] || fail "commit ${c} is not authored by the configured machine account"
+    n=$(git diff-tree --no-commit-id --name-only -r --root "$c" | wc -l | tr -d ' ')
+    [ "$n" -le "$MAX_FILES_PER_COMMIT" ] || fail "commit ${c} touches ${n} files (max ${MAX_FILES_PER_COMMIT}); split it into smaller commits"
+  done
+done
+exit 0
