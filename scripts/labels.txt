@@ -1,0 +1,19 @@
+# name|color|description  (read by scripts/setup-repo.sh; checked against coordinator/src/state.ts)
+factory:ready|0e8a16|Ready for the factory queue
+factory:tests|c5def5|QA is writing failing tests
+factory:impl|c5def5|Builder is implementing
+factory:verify|c5def5|Coordinator is re-running gates
+factory:review|c5def5|Reviewer is judging the diff
+factory:compliance|c5def5|Compliance check
+factory:pr|c5def5|Pull request opened
+factory:auto-merge|0e8a16|Low risk, merged by the coordinator
+factory:needs-human|d93f0b|High risk, waiting for the human
+factory:escalated|b60205|Escalated after repeated failure
+factory:blocked|e4e669|Skipped by the queue until unblocked
+risk:low|0e8a16|Low risk: may auto-merge
+risk:high|b60205|High risk: needs the human
+priority:p0|b60205|Highest priority
+priority:p1|d93f0b|High priority
+priority:p2|fbca04|Normal priority
+priority:p3|c2e0c6|Low priority
+harness-fix|5319e7|Improve the factory harness (P-02)
