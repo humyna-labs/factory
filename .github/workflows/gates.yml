@@ -1,0 +1,138 @@
+# Reusable gates for product repositories (spec 3.4, 3.7).
+# R-18: this is the source. Agents edit it here; the human reviews it and installs it into
+# humyna-labs/factory/.github/workflows/gates.yml with scripts/install-workflows.sh, then tags v1.
+# Products call it from their own ci/workflows/ci.yml:
+#   uses: humyna-labs/factory/.github/workflows/gates.yml@v1
+# Pins verified 2026-11-25 with "gh api repos/<action>/releases/latest" and ".../commits/<tag>".
+# gitleaks 8.30.1 sha256 taken from the release's checksums file on 2026-11-25.
+# Required status check names (setup-repo.sh): "gates / typecheck", "gates / lint", "gates / unit",
+# "gates / e2e", "gates / secrets". Written, not run: no workflow has run yet.
+name: gates
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: "22"
+      run-e2e:
+        type: boolean
+        default: true
+      factory-ref:
+        description: Ref of humyna-labs/factory that provides hooks/secret-guard.sh
+        type: string
+        default: v1
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  e2e:
+    if: ${{ inputs.run-e2e }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - name: Keep screenshots (P-04)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-screenshots
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  secrets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: humyna-labs/factory
+          ref: ${{ inputs.factory-ref }}
+          path: .factory-tools
+          persist-credentials: false
+      - name: no symlinks (W2-03)
+        run: |
+          links=$(git ls-files -s | awk '$1 == "120000"' | cut -f2)
+          if [ -n "$links" ]; then
+            echo "Symlinks are not allowed in factory or product repos (W2-03):"
+            printf '%s\n' "$links"
+            exit 1
+          fi
+      - name: secret-guard (mutation-checked rules, R-16)
+        run: .factory-tools/hooks/secret-guard.sh --scan-git
+      - name: gitleaks (full history)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -sSfL --max-time 60 -o "${RUNNER_TEMP}/gitleaks.tgz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${RUNNER_TEMP}/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/gitleaks.tgz" -C "${RUNNER_TEMP}" gitleaks
+          "${RUNNER_TEMP}/gitleaks" git --redact --no-banner --exit-code 1 .
