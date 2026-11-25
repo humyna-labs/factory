@@ -9,3 +9,5 @@ proving themselves become G-xx entries in `docs/golden-principles.md`.
 | [pin-versions-from-the-registry.md](pin-versions-from-the-registry.md) | Any time you write a version number |
 | [assemble-secret-fixtures-at-runtime.md](assemble-secret-fixtures-at-runtime.md) | Tests for secret scanners or push protection |
 | [mutation-check-guards-by-rule-block.md](mutation-check-guards-by-rule-block.md) | Writing or changing any guard |
+| [fakes-store-what-the-service-stores.md](fakes-store-what-the-service-stores.md) | A test reads back writes through a fake API |
+| [move-commits-out-as-bundles.md](move-commits-out-as-bundles.md) | Commits from an agent-writable checkout must reach GitHub |

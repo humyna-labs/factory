@@ -1,18 +1,37 @@
 # ADR 0002: Permission model for the machine account, rulesets and merges
 
-- Status: proposed (handoff D2-W2; the owner decides option a or b tonight)
-- Date: 2026-11-25
-- Principles: P-02, P-08, P-11, G-02, G-04, G-07, R-02, R-07, R-18, R-19
-- API fields: every GitHub API field named here (ruleset `bypass_actors`, `OrganizationAdmin`
-  actor id 1, `bypass_mode`, `strict_required_status_checks_policy`,
-  `actions/permissions/workflow`, `orgs/<org>/memberships/<user>`) is written from memory and
-  not run. No live GitHub call was allowed in this window. `scripts/setup-repo.sh` reads every
-  field back after writing it, so the first real run will show any wrong field by name.
+- Status: **accepted, option (b)**, 2026-11-25 (the owner applied it on both repositories that evening;
+  recorded by handoff D2-night)
+- Date: proposed and accepted 2026-11-25
+- Principles: P-02, P-08, P-11, G-01, G-02, G-04, G-07, R-02, R-07, R-18, R-19
+- API fields: written from memory in D2-W2, then checked by the first real `setup-repo.sh` run
+  (section "Evidence"). Every field read back as written except the OrganizationAdmin `actor_id`, which
+  GitHub stores as null. v1.2 compares that actor by type and mode only.
+
+## Evidence (2026-11-25, run by the owner on the host; facts from handoff D2-night)
+
+- `setup-repo.sh humyna-labs/factory --profile factory --owner-bypass` and the product run for
+  `humyna-labs/resume-sg`: the read-back failed on one field in both, `bypass_actors`: expected
+  `OrganizationAdmin:1:pull_request`, GitHub returned `OrganizationAdmin:null:pull_request`. Every earlier
+  field matched, including the five product status checks and `strict_required_status_checks_policy`.
+  So the merge settings, `actions/permissions/workflow`, the labels, the ruleset name, target, enforcement,
+  include pattern, rule types and pull-request parameters are as written here. The organization-membership
+  lookup let `--owner-bypass` through (G11), so it returned `member`.
+- The API returns `current_user_can_bypass: "pull_requests_only"` for the owner, and the bypass checkbox
+  appeared on the PR page: the bypass works with `actor_id` null. Factory PR #3 (`gates.yml`) and the
+  resume-sg workflow install PR were merged through it (the latter only after all five checks were green).
+- H-01 on resume-sg with PRs opened by `humyna-bot`: #2 (only `public/_headers`) was
+  `REVIEW_REQUIRED`/`BLOCKED`, and the bot's `gh pr merge` was refused; after the owner's approval it became
+  mergeable. #3 (only `src/App.tsx`) was `CLEAN` with no review. Both were closed and their branches deleted.
+- F1 had another cause than the one assumed below: the bot's fine-grained token had been "pending
+  organization approval" since it was created, so it could reach nothing. The owner approved it with
+  repositories `factory` and `resume-sg` only; Contents, Pull requests and Issues read and write; Checks,
+  Commit statuses and Actions read; nothing else (`docs/failures.md`).
 
 ## Context
 
-- F1: pushing `factory/v1` as `humyna-bot` failed with 403, so the machine token has no write access on
-  `humyna-labs/factory`. Spec 3.6 says "the factory repo is read-only to agents". Brief D2 says the token can write
+- F1: pushing `factory/v1` as `humyna-bot` failed with 403. This ADR assumed that the token lacked write
+  access; the real cause was that the token was still pending organization approval (Evidence). Spec 3.6 says "the factory repo is read-only to agents". Brief D2 says the token can write
   contents, PRs and issues. The coach wrote both, so the two conflict.
 - Review findings A3 and A5: `setup-repo.sh` replaced the ruleset blindly, the factory profile had no
   approval rule, the product profile let a branch that is behind its base pass, and the read-back checked almost nothing.
@@ -23,8 +42,9 @@
 
 ## Decision
 
-1. **Machine account.** `humyna-bot` gets Write on the factory repository and on every product
-   repository. It needs that to push feature branches and open PRs. It never merges on the factory, and it
+1. **Machine account.** `humyna-bot` gets write access to contents, pull requests and issues on the
+   factory repository and on every product repository, through its fine-grained token (as approved on
+   2026-11-25), and nothing that changes settings, workflows or secrets. It needs that to push feature branches and open PRs. It never merges on the factory, and it
    merges only low-risk PRs on products, through `coordinator/src/merge.ts` (R-02).
    `Deviation: spec 3.6 "factory read-only to agents"`. Reason: the agent cannot otherwise deliver
    factory changes as PRs (R-19). The rulesets below protect `main` instead of read-only access. Revisit when a
@@ -46,7 +66,7 @@
    - Factory: merge commits and squash allowed, rebase off. Merge commits keep each commit's `Agent-Role:`
      trailer on `main` (R-07).
    - Products: squash only, with the PR title and the coordinator's trailer in the squash message.
-7. **The deadlock:** two options follow. The owner chooses one tonight. The recommendation is (b).
+7. **The deadlock:** option (b), chosen and applied on 2026-11-25. Option (a) stays below for the record.
 
 ## Options for the deadlock
 
@@ -64,7 +84,8 @@ apply the rulesets. Every later PR is opened by `humyna-bot`, which the owner ca
 ### (b) One bypass actor: OrganizationAdmin, `bypass_mode: pull_request` (recommended)
 
 `setup-repo.sh --owner-bypass` adds exactly one bypass actor, `{"actor_type":
-"OrganizationAdmin", "actor_id": 1, "bypass_mode": "pull_request"}`. The mode is never `always`, and there is no bypass for
+"OrganizationAdmin", "actor_id": 1, "bypass_mode": "pull_request"}`. GitHub stores it with `actor_id` null
+(Evidence); the read-back accepts null or 1 for this actor type and compares the mode. The mode is never `always`, and there is no bypass for
 `humyna-bot`, any team, or any app. With this actor the owner can merge a PR on GitHub without an approval, but he still cannot push to
 `main` directly, because the bypass applies only through a PR. The script refuses option (b) unless `humyna-bot`'s organization
 role reads back as `member`, because an admin bot would be covered by the bypass too (guard G11; tested with the fake `gh`).
@@ -88,13 +109,13 @@ approver.
 - `scripts/setup-repo.sh` gains `--owner-bypass`, `--require-checks`, per-profile merge settings,
   read-only workflow tokens, read-first ordering, a confirmation, and a full read-back.
 - `docs/runbook.md` gives tonight's order for both options and the reviewed-clone commands.
-- To verify (human, tonight):
-  - The H-01 verification PR. The bot's `gh pr merge` on a high-risk PR must be refused.
-  - With (b): the owner can merge his own PR without an approval, and `git push origin main` from the owner's
-    clone is still refused.
+- Verified on 2026-11-25 (Evidence): the bot's `gh pr merge` on a high-risk PR was refused, and the owner
+  merged his own install PRs through the bypass.
+- Still to verify (human): `git push origin main` from the owner's reviewed clone is refused (the bypass
+  applies only through a pull request). Not reported tonight.
 
 ## Revisit
 
 - When a GitHub App replaces the machine token.
 - When a second human joins the organization: then option (b) must go, and approvals must be required.
-- After the first real ruleset read-back, if any field name above turns out to be wrong.
+- If GitHub starts to store or require an `actor_id` for OrganizationAdmin (the read-back would then name it).
