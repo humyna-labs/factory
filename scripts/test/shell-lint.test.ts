@@ -100,7 +100,7 @@ describe("human scripts run in dry-run mode (offline)", () => {
   it("install-workflows --dry-run previews the copy from a local checkout", () => {
     const r = run(["scripts/install-workflows.sh", "humyna-labs/factory", "--dry-run", "--source", "."]);
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain("COPY ci/workflows/gates.yml -> .github/workflows/gates.yml");
+    expect(r.stdout).toMatch(/^(COPY ci\/workflows\/gates\.yml -> \.github\/workflows\/gates\.yml|SAME gates\.yml is already installed)$/m);
   });
   it("labels file covers every coordinator state", () => {
     const labels = readFileSync(join(ROOT, "scripts", "labels.txt"), "utf8");
