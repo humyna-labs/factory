@@ -16,7 +16,7 @@ fail() { printf 'pre-push: REJECTED: %s\n' "$1" >&2; exit 1; }
 
 shown_url=$url
 # RULE P4 begin  (Codex 14: user info in a URL can hold a token; never print it)
-shown_url=$(printf '%s' "$url" | sed -E 's#^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@#\1#; s#^[^/@:]+@([^/:]+:)#\1#')
+shown_url=$(printf '%s' "$url" | sed -E 's#^([A-Za-z][A-Za-z0-9+.-]*://)[^/]*@#\1#; s#^[^/]*@([^@/:]+:)#\1#')
 # RULE P4 end
 
 # Owner from https://github.com/OWNER/repo(.git), git@github.com:OWNER/repo, ssh://git@github.com/OWNER/repo

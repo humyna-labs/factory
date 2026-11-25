@@ -86,8 +86,13 @@ const CASES: Case[] = [
     "pre-push: a rejected URL is shown without its user info",
     (r) => {
       const x = repo(false);
-      const out = push(r, x.dir, x.sha, { url: "https://user:SECRET123@gitlab.example/humyna-labs/x.git" });
-      return out.status === 1 && !out.stderr.includes("SECRET123") && out.stderr.includes("https://gitlab.example/humyna-labs/x.git") ? 0 : 99;
+      const a = push(r, x.dir, x.sha, { url: "https://user:SECRET123@gitlab.example/humyna-labs/x.git" });
+      const b = push(r, x.dir, x.sha, { url: "https://u:SEC@RET456@gitlab.example/humyna-labs/x.git" });
+      const c = push(r, x.dir, x.sha, { url: "user:SECRET789@evil.example:x/y" });
+      const okA = a.status === 1 && !a.stderr.includes("SECRET123") && a.stderr.includes("https://gitlab.example/humyna-labs/x.git");
+      const okB = b.status === 1 && !b.stderr.includes("RET456") && !b.stderr.includes("SEC@");
+      const okC = c.status === 1 && !c.stderr.includes("SECRET789") && c.stderr.includes("evil.example:x/y");
+      return okA && okB && okC ? 0 : 99;
     },
     0,
   ],

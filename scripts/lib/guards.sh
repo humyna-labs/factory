@@ -123,6 +123,11 @@ guard_workflow_permissions() { # <file>  (A2, verifier P3, Codex 2)
   gp_name=${1##*/}
   # GUARD G7 begin
   grep -Eq '^permissions:' "$1" || { refuse "${gp_name} has no top-level permissions: block"; return 1; }
+  # N3 review: "permissions:" with no value is null, which means the default token permissions.
+  if grep -Eq '^permissions:[[:space:]]*(~|null|Null|NULL)?[[:space:]]*(#.*)?$' "$1"; then
+    gp_null=$(awk 'p == 1 && /^[[:space:]]*(#.*)?$/ { next } p == 1 { r = ($0 ~ /^[[:space:]]/) ? "ok" : "null"; p = 2; exit } /^permissions:[[:space:]]*(#.*)?$/ { p = 1 } /^permissions:[[:space:]]*(~|null|Null|NULL)[[:space:]]*(#.*)?$/ { r = "null"; exit } END { if (p == 1) r = "null"; print r }' "$1")
+    [ "${gp_null}" != null ] || { refuse "${gp_name}: the top-level permissions: has no value (null means the default token); list the scopes, for example contents: read"; return 1; }
+  fi
   # Lines that are exactly "<allowlisted scope>: write" are the only place a write token may appear.
   gp_allowed='^$'
   for gp_scope in ${ALLOWED_WRITE_SCOPES}; do gp_allowed="${gp_allowed}|^[[:space:]]*${gp_scope}:[[:space:]]*write[[:space:]]*\$"; done
@@ -145,8 +150,10 @@ guard_workflow_constructs() { # <file>  (N2d): YAML that a line-based check cann
 guard_workflow_triggers() { # <file>  (verifier P3, Codex 2): privileged triggers and secret hand-offs
   gt_name=${1##*/}
   # GUARD G18 begin
-  gt_hit=$(grep -Eion '(^|[^A-Za-z0-9_])(pull_request_target|workflow_run|inherit)([^A-Za-z0-9_]|$)' "$1" | sed -n 1p)
-  if [ -n "${gt_hit}" ]; then refuse "${gt_name} uses '$(safe "${gt_hit}")'. pull_request_target and workflow_run run with secrets on untrusted code, and secrets: inherit hands every secret to another workflow; none of them is allowed (the word itself is refused anywhere)"; return 1; fi
+  gt_hit=$(grep -Eion '(^|[^A-Za-z0-9_])(pull_request_target|workflow_run|inherit|issue_comment|pull_request_review|pull_request_review_comment|discussion|discussion_comment)([^A-Za-z0-9_]|$)' "$1" | sed -n 1p)
+  if [ -n "${gt_hit}" ]; then refuse "${gt_name} uses '$(safe "${gt_hit}")'. pull_request_target and workflow_run run with secrets on untrusted code, comment and review triggers run with secrets on text anyone can write, and secrets: inherit hands every secret to another workflow; none of them is allowed (the word itself is refused anywhere)"; return 1; fi
+  # N3 review: toJSON(secrets) hands every secret over, like inherit.
+  if grep -Eiq 'tojson[[:space:]]*\([[:space:]]*secrets' "$1"; then refuse "${gt_name} passes toJSON(secrets), which hands every secret to a step; pass only the named secret a step needs"; return 1; fi
   # GUARD G18 end
   return 0
 }
@@ -172,6 +179,9 @@ guard_workflow_uses() { # <file>  (verifier P3, Codex 2): what a workflow may ru
         ;;
     esac
   done <"$1"
+  # N3 review: a job container or service image is external code too; it must be pinned by digest.
+  gw_img=$(grep -En '^[[:space:]]*(-[[:space:]]+)?(image|container):[[:space:]]*[^[:space:]#]' "$1" | grep -Ev '@sha256:[0-9a-f]{64}["'"'"']?[[:space:]]*(#.*)?$' | sed -n 1p | cut -c1-80)
+  if [ -n "${gw_img}" ]; then refuse "${gw_name} line $(safe "${gw_img}"): a container or service image must be pinned to @sha256:<64 hex>"; return 1; fi
   # GUARD G19 end
   return 0
 }

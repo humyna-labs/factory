@@ -20,8 +20,8 @@ here=$(cd "${here}" && pwd -P) || { printf 'FAIL cannot resolve the script direc
 mount_dir="${HOME:-/nonexistent}/ai-projects/agent-factory"
 mount_phys=$(cd "${mount_dir}" 2>/dev/null && pwd -P || printf '%s' "${mount_dir}")
 for m in "${mount_dir}" "${mount_phys}"; do
-  case "$(printf '%s/' "${here}" | tr 'A-Z' 'a-z')" in
-    "$(printf '%s' "${m}" | tr 'A-Z' 'a-z')"/*) printf 'FAIL this script is inside the bind mount %s, which the factory container can change. Run it from ~/ai-projects/factory-reviewed (docs/runbook.md)\n' "${mount_dir}" >&2; exit 1 ;;
+  case "$(printf '%s/' "${here}" | LC_ALL=C tr 'A-Z' 'a-z')" in
+    "$(printf '%s' "${m}" | LC_ALL=C tr 'A-Z' 'a-z')"/*) printf 'FAIL this script is inside the bind mount %s, which the factory container can change. Run it from ~/ai-projects/factory-reviewed (docs/runbook.md)\n' "${mount_dir}" >&2; exit 1 ;;
   esac
 done
 # CHECK E1 end

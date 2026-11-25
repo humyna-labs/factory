@@ -5,7 +5,8 @@
 #   fail (regex: a call whose argv matches it exits 1),
 #   hang (regex: a call whose argv matches it sleeps until killed),
 #   corrupt (the stored ruleset reads back changed; content: enforcement (default), bypass-mode,
-#   bypass-id), remote (bare repo path).
+#   bypass-id), remote (bare repo path), clone_from (optional: gh repo clone uses this repo instead,
+#   as when gh's protocol setting or a rewrite sends the clone elsewhere).
 # Like GitHub (seen 2026-11-25), a stored OrganizationAdmin bypass actor has actor_id null.
 set -u
 d=${FAKE_GH_DIR:?}
@@ -32,7 +33,7 @@ store_ruleset() { # <body json>: normalise like GitHub
 jq_expr=$(opt --jq "$@" || true)
 case "$1 ${2:-}" in
   "auth status") exit 0 ;;
-  "repo clone") git clone -q "$(cat "$d/remote")" "$4"; exit $? ;;
+  "repo clone") src=$(cat "$d/remote"); [ -f "$d/clone_from" ] && src=$(cat "$d/clone_from"); git clone -q "$src" "$4"; exit $? ;;
   "label create")
     color=$(opt --color "$@"); desc=$(opt --description "$@")
     jq --arg n "$3" --arg c "$color" --arg s "$desc" '[.[] | select(.name != $n)] + [{name: $n, color: $c, description: $s}]' "$d/labels.json" >"$d/t" && save labels.json; exit 0 ;;

@@ -187,6 +187,8 @@ Moving deploys to Workers static assets is backlog BL-25 (through a reviewed tem
 ## Routine checks (container)
 
 - All factory checks: `pnpm -r typecheck && pnpm -r lint && pnpm -r test`.
+  The script flow tests need util-linux `script -qec` (a terminal for the `yes` prompt) and run in the
+  container only; macOS `script` has other options.
 - Dry run: `bin/coordinator --dry-run --verbose`, then
   `bin/coordinator validate-runs /workspace/runs/dry-run/runs.csv`.
 - Golden tasks before changing a role prompt, the coordinator or the Claude Code version:

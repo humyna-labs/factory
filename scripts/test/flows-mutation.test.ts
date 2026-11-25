@@ -31,7 +31,7 @@ function replaceOnce(find: string, by: string) {
   return (text: string) => {
     const n = text.split(find).length - 1;
     if (n !== 1) throw new Error(`mutation text found ${n} times, expected once: ${find}`);
-    return text.replace(find, by);
+    return text.replace(find, () => by);
   };
 }
 
@@ -51,6 +51,10 @@ const weakenings: Mutation[] = [
   },
   { id: "label-record", file: "scripts/setup-repo.sh", apply: replaceOnce('mutate "label ${name} created or updated" 30 gh label create', "with_timeout 30 gh label create") },
   { id: "push-refspec", file: "scripts/install-workflows.sh", apply: replaceOnce('"refs/heads/${BRANCH}:refs/heads/${BRANCH}"', '"${BRANCH}"') },
+  // Behavioural weakenings: a disabled block that leaves a variable unset is only caught by a crash.
+  { id: "I2", file: "scripts/install-workflows.sh", covers: "I2", apply: replaceOnce(' and .author.login == \\"${me}\\"', "") },
+  { id: "I3", file: "scripts/install-workflows.sh", covers: "I3", apply: replaceOnce('base=$(git -C "${work}/repo" rev-parse -q --verify "refs/remotes/origin/main^{commit}")', 'base=$(git -C "${work}/repo" rev-parse HEAD)') },
+  { id: "I3-fetch", file: "scripts/install-workflows.sh", apply: replaceOnce('with_timeout 60 git -C "${work}/repo" fetch -q --prune origin', "true || git fetch-disabled") },
 ];
 
 describe("mutation check: checks in the entry scripts and common.sh", () => {

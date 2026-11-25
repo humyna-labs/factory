@@ -75,7 +75,7 @@ describe("human scripts run in dry-run mode (offline)", () => {
   // main tracking origin/main, clean, origin a local bare repo.
   const clone = reviewedClone(ROOT);
   const home = mkdtempSync(join(tmpdir(), "dry-home-"));
-  const run = (args: string[], cwd = clone) => spawnSync("bash", args, { cwd, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, GIT_CONFIG_NOSYSTEM: "1" } });
+  const run = (args: string[], cwd = clone) => spawnSync("bash", args, { cwd, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, GIT_CONFIG_NOSYSTEM: "1", GIT_ALLOW_PROTOCOL: "file" } });
   it("setup-repo --dry-run prints the plan and a valid ruleset JSON, changes nothing", () => {
     const r = run(["scripts/setup-repo.sh", "humyna-labs/resume-sg", "--dry-run"]);
     expect(r.status, r.stderr).toBe(0);
@@ -123,10 +123,12 @@ describe("human scripts run in dry-run mode (offline)", () => {
       expect(r.stderr).toMatch(why);
     }
   });
-  it("the container's own working copy is not a reviewed clone, so even its dry run refuses", () => {
-    const r = spawnSync("bash", ["scripts/setup-repo.sh", "humyna-labs/resume-sg", "--dry-run"], { cwd: ROOT, encoding: "utf8" });
+  it("the container's own working copy is not a reviewed clone, so even its dry run refuses, offline", () => {
+    // GIT_ALLOW_PROTOCOL=file: if the checkout ever passed the location checks, the fetch from
+    // github.com fails here instead of reaching the network (N3 review finding).
+    const r = spawnSync("bash", ["scripts/setup-repo.sh", "humyna-labs/resume-sg", "--dry-run"], { cwd: ROOT, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, GIT_CONFIG_NOSYSTEM: "1", GIT_ALLOW_PROTOCOL: "file" } });
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/REFUSED/);
+    expect(r.stderr).toMatch(/REFUSED|git fetch origin .* failed/);
   });
   it("labels file covers every coordinator state", () => {
     const labels = readFileSync(join(ROOT, "scripts", "labels.txt"), "utf8");

@@ -113,6 +113,8 @@ export function run(root: string, e: Env, script: string, args: string[], stdin:
     FAKE_GH_DIR: e.dir,
     FAKE_REAL_GIT: REAL_GIT,
     GIT_CONFIG_NOSYSTEM: "1",
+    // Nothing in a flow test may reach the network: only local repositories are allowed.
+    GIT_ALLOW_PROTOCOL: "file",
     FLOW_ARGS: join(e.dir, "args"),
     FLOW_CWD: e.dir,
     FLOW_PRE: o.pre ?? "",
@@ -376,6 +378,29 @@ export const INSTALL_SCENARIOS: Scenario[] = [
       expect(r.status, r.stderr).toBe(0);
       expect(r.log).toContain(`parent=${main}`);
       expect(r.log).not.toContain("DEV-ONLY.md");
+    },
+  },
+  {
+    name: "install takes main from a fetch of the checked URL, not from what gh happened to clone",
+    covers: ["I3", "I3-fetch"],
+    run: (root) => {
+      const e = state(READ);
+      const { main } = remote(e, { "ci/workflows/gates.yml": GOOD_WF });
+      // A decoy repository that gh clones instead (another protocol or a rewrite), with another main.
+      const decoy = join(e.dir, "decoy");
+      mkdirSync(decoy);
+      writeFileSync(join(decoy, "DECOY.md"), "not the reviewed repo\n");
+      mkdirSync(join(decoy, "ci", "workflows"), { recursive: true });
+      writeFileSync(join(decoy, "ci", "workflows", "gates.yml"), GOOD_WF);
+      git(decoy, "init", "-q", "-b", "main");
+      git(decoy, "add", "-A");
+      git(decoy, "-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-q", "-m", "decoy");
+      writeFileSync(join(e.dir, "clone_from"), decoy);
+      const r = install(root, e);
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.log).toMatch(/^git fetch -q --prune origin \+refs\/heads\/main:refs\/remotes\/origin\/main /m);
+      expect(r.log).toContain(`parent=${main}`);
+      expect(r.log).not.toContain("DECOY.md");
     },
   },
   {

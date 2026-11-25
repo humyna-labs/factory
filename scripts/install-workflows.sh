@@ -17,8 +17,8 @@ here=$(cd "${here}" && pwd -P) || { printf 'FAIL cannot resolve the script direc
 mount_dir="${HOME:-/nonexistent}/ai-projects/agent-factory"
 mount_phys=$(cd "${mount_dir}" 2>/dev/null && pwd -P || printf '%s' "${mount_dir}")
 for m in "${mount_dir}" "${mount_phys}"; do
-  case "$(printf '%s/' "${here}" | tr 'A-Z' 'a-z')" in
-    "$(printf '%s' "${m}" | tr 'A-Z' 'a-z')"/*) printf 'FAIL this script is inside the bind mount %s, which the factory container can change. Run it from ~/ai-projects/factory-reviewed (docs/runbook.md)\n' "${mount_dir}" >&2; exit 1 ;;
+  case "$(printf '%s/' "${here}" | LC_ALL=C tr 'A-Z' 'a-z')" in
+    "$(printf '%s' "${m}" | LC_ALL=C tr 'A-Z' 'a-z')"/*) printf 'FAIL this script is inside the bind mount %s, which the factory container can change. Run it from ~/ai-projects/factory-reviewed (docs/runbook.md)\n' "${mount_dir}" >&2; exit 1 ;;
   esac
 done
 # CHECK E1 end
@@ -125,13 +125,15 @@ main() {
   with_timeout 180 gh repo clone "${R}" "${work}/repo" -- --quiet || die "clone of ${R} failed"
   git -C "${work}/repo" remote set-url origin "https://github.com/${R}.git"
   guard_push_url "${work}/repo" "${REPO_NAME}" || die "refusing to continue: origin is redirected"
-  # CHECK I3 begin  (Codex 7, N2e): start from main as the clone fetched it, not the default branch.
+  # Codex 4 and 7, N2e: the clone may have used another URL (gh's protocol setting, rewrites), so
+  # main and the install branches are fetched again from the URL that was just checked.
+  with_timeout 60 git -C "${work}/repo" fetch -q --prune origin "+refs/heads/main:refs/remotes/origin/main" "+refs/heads/${BRANCH_PREFIX}*:refs/remotes/origin/${BRANCH_PREFIX}*" || die "fetch of main from https://github.com/${R}.git failed (does ${R} have a main branch?)"
+  # CHECK I3 begin  (Codex 7, N2e): start from that explicitly fetched main, not the default branch.
   base=$(git -C "${work}/repo" rev-parse -q --verify "refs/remotes/origin/main^{commit}") || die "${R} has no main branch to install into"
   git -C "${work}/repo" checkout -q --detach "${base}" || die "cannot check out main of ${R}"
   # CHECK I3 end
   # CHECK I4 begin  (verifier P5): a pushed install branch without an open PR means an earlier run
   # stopped after its push; pushing another branch would leave two.
-  # The clone fetched every branch of the remote into refs/remotes/origin/.
   stale=$(git -C "${work}/repo" for-each-ref --format='%(refname:lstrip=3)' "refs/remotes/origin/${BRANCH_PREFIX}*") || die "cannot list the branches of ${R}"
   if [ -n "${stale}" ]; then
     stale_name=$(printf '%s\n' "${stale}" | sed -n 1p)
