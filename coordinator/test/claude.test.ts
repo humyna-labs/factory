@@ -58,7 +58,7 @@ describe("claude command assembly", () => {
 
   it("gives hooks their directories through the child env, nothing else", () => {
     const inv = buildClaudeInvocation(session(), loadRoleConfig("builder"), opts);
-    expect(Object.keys(inv.env).sort()).toEqual(["FACTORY_GUARD_LOG", "FACTORY_REPORTS_DIR"]);
+    expect(Object.keys(inv.env).sort()).toEqual(["FACTORY_GUARD_LOG", "FACTORY_REPORTS_DIR", "FACTORY_REPORT_PATH"]);
   });
 
   it("uses the agreed models: qa=sonnet, builder=sonnet, reviewer=opus, compliance=haiku", () => {

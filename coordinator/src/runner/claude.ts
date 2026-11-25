@@ -22,9 +22,11 @@ export interface ClaudeRunnerOptions {
   baseBranch: string;
   reportsDir: string;
   guardLog: string;
+  /** For hooks/session-start.sh (W2-08); the hook's default applies when unset. */
+  escalationsDir?: string;
 }
 
-export function buildClaudeInvocation(s: RoleSession, rc: RoleConfig, o: Pick<ClaudeRunnerOptions, "baseBranch" | "reportsDir" | "guardLog">): Invocation {
+export function buildClaudeInvocation(s: RoleSession, rc: RoleConfig, o: Pick<ClaudeRunnerOptions, "baseBranch" | "reportsDir" | "guardLog" | "escalationsDir">): Invocation {
   const args = [
     "-p",
     "--permission-mode",
@@ -52,7 +54,9 @@ export function buildClaudeInvocation(s: RoleSession, rc: RoleConfig, o: Pick<Cl
     args,
     cwd: s.worktree,
     input: sessionPrompt(s, o.baseBranch),
-    env: { FACTORY_REPORTS_DIR: o.reportsDir, FACTORY_GUARD_LOG: o.guardLog },
+    // Hooks inherit this env: path-guard (reports dir, guard log), stop-report (this session's
+    // report, W2-08) and session-start (escalations dir).
+    env: { FACTORY_REPORTS_DIR: o.reportsDir, FACTORY_GUARD_LOG: o.guardLog, FACTORY_REPORT_PATH: s.reportPath, ...(o.escalationsDir ? { FACTORY_ESCALATIONS_DIR: o.escalationsDir } : {}) },
   };
 }
 

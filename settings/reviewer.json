@@ -3,7 +3,11 @@
   "permissions": {
     "disableBypassPermissionsMode": "disable",
     "deny": [
-      "Edit(src/**)", "Edit(tests/**)", "Edit(evals/**)", "Edit(docs/**)", "Edit(package.json)",
+      "Edit(src/**)",
+      "Edit(tests/**)",
+      "Edit(evals/**)",
+      "Edit(docs/**)",
+      "Edit(package.json)",
       "Edit(.github/**)",
       "Edit(.githooks/**)",
       "Edit(.factory/**)",
@@ -21,11 +25,45 @@
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
-        "hooks": [{ "type": "command", "command": "/workspace/factory/hooks/path-guard.sh reviewer", "timeout": 15 }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/workspace/factory/hooks/path-guard.sh reviewer",
+            "timeout": 15
+          }
+        ]
       },
       {
         "matcher": "Edit|Write|MultiEdit",
-        "hooks": [{ "type": "command", "command": "/workspace/factory/hooks/secret-guard.sh --hook", "timeout": 15 }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/workspace/factory/hooks/secret-guard.sh --hook",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/workspace/factory/hooks/session-start.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/workspace/factory/hooks/stop-report.sh",
+            "timeout": 30
+          }
+        ]
       }
     ]
   }

@@ -99,7 +99,7 @@ async function main(argv: string[]): Promise<number> {
   const deps: Deps = {
     cfg,
     gh,
-    runner: new ClaudeRunner({ exec, loadRole: loadRoleConfig, baseBranch: cfg.base_branch, reportsDir: paths.reportsDir, guardLog: paths.guardLog }),
+    runner: new ClaudeRunner({ exec, loadRole: loadRoleConfig, baseBranch: cfg.base_branch, reportsDir: paths.reportsDir, guardLog: paths.guardLog, escalationsDir: paths.escalationsDir }),
     gates: new ShellGates(cfg, exec),
     workspace: new GitWorkspace(exec, { repoDir, worktreesDir: paths.worktreesDir, baseBranch: cfg.base_branch, remote: "origin", pushHookPath: factoryPath(".githooks") }),
     exec,

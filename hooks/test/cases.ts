@@ -1,7 +1,7 @@
 // Shared case tables for the guards. The mutation test re-runs these against scratch copies
 // with one rule disabled; every rule must make at least one case fail (R-16, G-03).
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 
 export const WT = "/tmp/factory-guard-wt";
 export const REPORTS = "/tmp/factory-guard-reports";
@@ -9,9 +9,22 @@ export const REPORTS = "/tmp/factory-guard-reports";
 // W2-03 fixtures: a symlink that stays inside the worktree (only R10 can stop it) and one to a host file.
 mkdirSync(`${WT}/src`, { recursive: true });
 writeFileSync(`${WT}/src/real.ts`, "export {};\n");
+// Test files import this module in parallel workers: create the links once, tolerate a race.
 for (const [link, target] of [["src/inner.ts", `${WT}/src/real.ts`], ["src/hosts.ts", "/etc/hosts"]] as const) {
-  rmSync(`${WT}/${link}`, { force: true });
-  symlinkSync(target, `${WT}/${link}`);
+  const p = `${WT}/${link}`;
+  let current: string | undefined;
+  try {
+    current = readlinkSync(p);
+  } catch {
+    current = undefined;
+  }
+  if (current === target) continue;
+  rmSync(p, { force: true });
+  try {
+    symlinkSync(target, p);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+  }
 }
 
 export interface GuardCase {
