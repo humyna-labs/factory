@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # Fake gh for offline tests of the human-run scripts. State lives in $FAKE_GH_DIR:
-#   log (one line per call), repo.json, workflow.json, rulesets.json, labels.json, prs.json,
-#   membership.json (absent = 404), fail (regex: a call whose argv matches it exits 1),
-#   corrupt (present = the ruleset reads back with enforcement "evaluate"), remote (bare repo path).
+#   log (one line per call), repo.json, workflow.json, rulesets.json, labels.json (objects with
+#   name, color, description), prs.json, membership.json (absent = 404),
+#   fail (regex: a call whose argv matches it exits 1),
+#   hang (regex: a call whose argv matches it sleeps until killed),
+#   corrupt (the stored ruleset reads back changed; content: enforcement (default), bypass-mode,
+#   bypass-id), remote (bare repo path), clone_from (optional: gh repo clone uses this repo instead,
+#   as when gh's protocol setting or a rewrite sends the clone elsewhere).
+# Like GitHub (seen 2026-11-25), a stored OrganizationAdmin bypass actor has actor_id null.
 set -u
 d=${FAKE_GH_DIR:?}
 printf '%s\n' "$*" >>"$d/log"
 if [ -f "$d/fail" ] && printf '%s' "$*" | grep -Eq -- "$(cat "$d/fail")"; then echo "fake gh: failing on purpose" >&2; exit 1; fi
+if [ -f "$d/hang" ] && printf '%s' "$*" | grep -Eq -- "$(cat "$d/hang")"; then exec sleep 60; fi
 args=()
 while [ $# -gt 0 ]; do
   case "$1" in --hostname) shift 2 ;; *) args+=("$1"); shift ;; esac
@@ -20,12 +26,18 @@ opt() { # <name> <args...>: value after option
   while [ $# -gt 0 ]; do [ "$1" = "$n" ] && { printf '%s' "${2:-}"; return 0; }; shift; done
   return 1
 }
+save() { mv "$d/t" "$d/$1"; }
+store_ruleset() { # <body json>: normalise like GitHub
+  printf '%s' "$1" | jq '.bypass_actors |= map(if .actor_type == "OrganizationAdmin" then .actor_id = null else . end)'
+}
 jq_expr=$(opt --jq "$@" || true)
 case "$1 ${2:-}" in
   "auth status") exit 0 ;;
-  "repo clone") git clone -q "$(cat "$d/remote")" "$4"; exit $? ;;
-  "label create") jq --arg n "$3" '. + [$n] | unique' "$d/labels.json" >"$d/t" && mv "$d/t" "$d/labels.json"; exit 0 ;;
-  "label list") jqx "$(jq '[.[] | {name: .}]' "$d/labels.json")" "$jq_expr"; exit 0 ;;
+  "repo clone") src=$(cat "$d/remote"); [ -f "$d/clone_from" ] && src=$(cat "$d/clone_from"); git clone -q "$src" "$4"; exit $? ;;
+  "label create")
+    color=$(opt --color "$@"); desc=$(opt --description "$@")
+    jq --arg n "$3" --arg c "$color" --arg s "$desc" '[.[] | select(.name != $n)] + [{name: $n, color: $c, description: $s}]' "$d/labels.json" >"$d/t" && save labels.json; exit 0 ;;
+  "label list") jqx "$(cat "$d/labels.json")" "$jq_expr"; exit 0 ;;
   "pr list") jqx "$(cat "$d/prs.json")" "$jq_expr"; exit 0 ;;
   "pr create") exit 0 ;;
   "pr view") jqx '{"url":"https://github.com/humyna-labs/x/pull/1"}' "$jq_expr"; exit 0 ;;
@@ -48,16 +60,23 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$method $path" in
+  "GET user") jqx '{"login":"owner"}' "$jq_expr" ;;
   "GET repos/"*/*/actions/permissions/workflow) jqx "$(cat "$d/workflow.json")" "$jq_expr" ;;
-  "PUT repos/"*/*/actions/permissions/workflow) jq --argjson f "$fields" '. + $f' "$d/workflow.json" >"$d/t" && mv "$d/t" "$d/workflow.json" ;;
+  "PUT repos/"*/*/actions/permissions/workflow) jq --argjson f "$fields" '. + $f' "$d/workflow.json" >"$d/t" && save workflow.json ;;
   "GET repos/"*/*/rulesets) jqx "$(jq '[.[] | {id, name}]' "$d/rulesets.json")" "$jq_expr" ;;
-  "POST repos/"*/*/rulesets) body=$(cat); jq --argjson b "$body" '. + [($b + {id: 7})]' "$d/rulesets.json" >"$d/t" && mv "$d/t" "$d/rulesets.json" ;;
-  "PUT repos/"*/*/rulesets/*) id=${path##*/}; body=$(cat); jq --argjson b "$body" --argjson id "$id" 'map(if .id == $id then ($b + {id: $id}) else . end)' "$d/rulesets.json" >"$d/t" && mv "$d/t" "$d/rulesets.json" ;;
+  "POST repos/"*/*/rulesets) body=$(store_ruleset "$(cat)"); jq --argjson b "$body" '. + [($b + {id: 7})]' "$d/rulesets.json" >"$d/t" && save rulesets.json ;;
+  "PUT repos/"*/*/rulesets/*) id=${path##*/}; body=$(store_ruleset "$(cat)"); jq --argjson b "$body" --argjson id "$id" 'map(if .id == $id then ($b + {id: $id}) else . end)' "$d/rulesets.json" >"$d/t" && save rulesets.json ;;
   "GET repos/"*/*/rulesets/*) id=${path##*/}; r=$(jq --argjson id "$id" '.[] | select(.id == $id)' "$d/rulesets.json")
-    [ -f "$d/corrupt" ] && r=$(printf '%s' "$r" | jq '.enforcement = "evaluate"')
+    if [ -f "$d/corrupt" ]; then
+      case "$(cat "$d/corrupt")" in
+        bypass-mode) r=$(printf '%s' "$r" | jq '.bypass_actors |= map(.bypass_mode = "always")') ;;
+        bypass-id) r=$(printf '%s' "$r" | jq '.bypass_actors |= map(.actor_id = 5)') ;;
+        *) r=$(printf '%s' "$r" | jq '.enforcement = "evaluate"') ;;
+      esac
+    fi
     jqx "$r" "$jq_expr" ;;
   "GET repos/"*/*) jqx "$(cat "$d/repo.json")" "$jq_expr" ;;
-  "PATCH repos/"*/*) jq --argjson f "$fields" '. + $f' "$d/repo.json" >"$d/t" && mv "$d/t" "$d/repo.json" ;;
+  "PATCH repos/"*/*) jq --argjson f "$fields" '. + $f' "$d/repo.json" >"$d/t" && save repo.json ;;
   "GET orgs/"*/teams/*) jqx '{"id":42}' "$jq_expr" ;;
   "GET orgs/"*/memberships/*) [ -f "$d/membership.json" ] || { echo "HTTP 404" >&2; exit 1; }; jqx "$(cat "$d/membership.json")" "$jq_expr" ;;
   *) echo "fake gh: unsupported api $method $path" >&2; exit 2 ;;

@@ -1,5 +1,39 @@
 #!/usr/bin/env bash
-# git wrapper for offline tests: records and fakes "push" (exit $FAKE_GIT_PUSH_RC, default 0);
-# every other command runs the real git at $FAKE_REAL_GIT.
-if [ "${1:-}" = push ]; then printf 'git %s\n' "$*" >>"${FAKE_GH_DIR:?}/log"; exit "${FAKE_GIT_PUSH_RC:-0}"; fi
-exec "${FAKE_REAL_GIT:?}" "$@"
+# git wrapper for offline tests. It finds the subcommand after global options (-C <dir>, -c <k=v>):
+# - push: recorded and faked (exit $FAKE_GIT_PUSH_RC, default 0). For each pushed source ref it also
+#   records the commit, its parent and its files, so tests can check what would have reached GitHub.
+# - fetch, ls-remote, pull: run the real git with origin's github.com URL mapped to the local bare repo
+#   in $FAKE_GH_DIR/remote, for that call only (so remote get-url still shows the real URL).
+# The flow env also sets GIT_ALLOW_PROTOCOL=file, so nothing can reach the network by mistake.
+real=${FAKE_REAL_GIT:?}
+pre=()
+args=("$@")
+i=0
+while [ $i -lt ${#args[@]} ]; do
+  case "${args[$i]}" in
+    -C | -c) pre+=("${args[$i]}" "${args[$((i + 1))]}"); i=$((i + 2)) ;;
+    *) break ;;
+  esac
+done
+sub=${args[$i]:-}
+case "$sub" in
+  push)
+    log=${FAKE_GH_DIR:?}/log
+    printf 'git %s\n' "${args[*]:$i}" >>"$log"
+    for a in "${args[@]:$((i + 1))}"; do
+      case "$a" in refs/heads/*) src=${a%%:*}
+        printf 'pushed %s commit=%s parent=%s\n' "$src" "$("$real" "${pre[@]}" rev-parse "$src")" "$("$real" "${pre[@]}" rev-parse "$src^")" >>"$log"
+        "$real" "${pre[@]}" ls-tree -r --name-only "$src" | sed 's/^/pushed-file /' >>"$log" ;;
+      esac
+    done
+    if [ -n "${FAKE_GIT_PUSH_HANG:-}" ]; then exec sleep 60; fi
+    exit "${FAKE_GIT_PUSH_RC:-0}"
+    ;;
+  fetch | ls-remote | pull)
+    if [ -f "${FAKE_GH_DIR:-/nonexistent}/remote" ]; then
+      printf 'git %s\n' "${args[*]:$i}" >>"$FAKE_GH_DIR/log"
+      exec "$real" -c "url.$(cat "$FAKE_GH_DIR/remote").insteadOf=https://github.com/humyna-labs/resume-sg.git" "$@"
+    fi
+    ;;
+esac
+exec "$real" "$@"

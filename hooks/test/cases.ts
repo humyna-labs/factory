@@ -105,6 +105,20 @@ export const PATH_GUARD_CASES: GuardCase[] = [
   b("builder", "ln --symbolic a src/b", "deny", "B7"),
   b("builder", "ln /etc/hosts src/hard.ts", "deny", "B7"),
   b("builder", "node -e \"require('fs').symlinkSync('/etc','src/e')\"", "deny", "B7"),
+  // D2-night N2h: the evasions the verifier found (P6), and variants of them
+  b("builder", "/bin/ln -s /etc/hosts src/a", "deny", "B7"),
+  b("builder", "\\ln -s /etc/hosts src/a", "deny", "B7"),
+  b("builder", "busybox ln -s /etc/hosts src/a", "deny", "B7"),
+  b("builder", "\"$(which ln)\" -s /etc/hosts src/a", "deny", "B7"),
+  b("builder", "cp -s /etc/hosts src/a", "deny", "B7"),
+  b("builder", "cp -rs /etc src/e", "deny", "B7"),
+  b("qa", "cp --symbolic-link /etc/hosts tests/a", "deny", "B7"),
+  b("builder", "perl -e 'symlink \"/etc/hosts\", \"src/a\"'", "deny", "B7"),
+  b("builder", "python3 -c 'import os; os.link(\"/etc/hosts\", \"src/a\")'", "deny", "B7"),
+  b("builder", "git update-index --add --cacheinfo 120000,e69de29bb2d1d6434b8b29ae775ad8c2e48c5391,src/a", "deny", "B7"),
+  b("builder", "cp -r public dist", "allow", "B0"),
+  b("builder", "ls -ln src", "allow", "B0"),
+  b("builder", "node -e \"require('fs').unlinkSync('src/x')\"", "allow", "B0"),
   b("builder", "echo login && pnpm lint", "allow", "B0"),
 ];
 

@@ -1,5 +1,5 @@
 // Code searches that back R-02, R-04, R-05, R-13 and R-18 (P-05: errors say how to fix).
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -56,8 +56,20 @@ describe("structure", () => {
     expect(hits).toEqual([]);
   });
 
-  it("R-18: no file under .github/workflows/; workflow sources live in ci/workflows/", () => {
-    expect(files.filter((f) => /(^|\/)\.github\/workflows\//.test(f))).toEqual([]);
+  it("R-18: .github/workflows/ holds only human-installed copies of ci/workflows/ sources", () => {
+    // Since PR #3 the human's install-workflows.sh run put gates.yml on main. Agents still never
+    // write there (path-guard R3, B2); a branch may not change what main has installed.
+    const installed = files.filter((f) => /(^|\/)\.github\/workflows\//.test(f));
+    for (const f of installed) {
+      expect(f, "only the repo root may have .github/workflows/").toMatch(/^\.github\/workflows\/[^/]+$/);
+      expect(files, `${f} has no source in ci/workflows/; agents edit ci/workflows/ and the human installs`).toContain(`ci/workflows/${f.split("/").pop() ?? ""}`);
+    }
+    const hasMain = spawnSync("git", ["rev-parse", "--verify", "-q", "origin/main"], { cwd: FACTORY_ROOT }).status === 0;
+    if (hasMain) {
+      const d = spawnSync("git", ["diff", "--name-only", "origin/main", "--", ".github/workflows"], { cwd: FACTORY_ROOT, encoding: "utf8" });
+      expect(d.status).toBe(0);
+      expect(d.stdout.trim(), "this branch changes an installed workflow; change ci/workflows/ instead (R-18)").toBe("");
+    }
     expect(files).toContain("ci/workflows/gates.yml");
     expect(files).toContain("templates/product/ci/workflows/ci.yml");
   });

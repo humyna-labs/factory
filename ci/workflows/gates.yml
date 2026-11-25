@@ -6,7 +6,10 @@
 # Pins verified 2026-11-25 with "gh api repos/<action>/releases/latest" and ".../commits/<tag>".
 # gitleaks 8.30.1 sha256 taken from the release's checksums file on 2026-11-25.
 # Required status check names (setup-repo.sh): "gates / typecheck", "gates / lint", "gates / unit",
-# "gates / e2e", "gates / secrets". Written, not run: no workflow has run yet.
+# "gates / e2e", "gates / secrets". Verified 2026-11-25: all five were green on the resume-sg
+# install PR, with these names. Keep the job names unchanged; the rulesets require them.
+# D2-night (Codex 8): every run step uses bash with -e and pipefail (defaults below), and the
+# symlink scan runs before the tools checkout and covers every commit reachable from HEAD.
 name: gates
 
 on:
@@ -25,6 +28,10 @@ on:
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   typecheck:
@@ -110,20 +117,27 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: no symlinks in any commit (W2-03), before the tools checkout
+        run: |
+          set -euo pipefail
+          commits=$(git rev-list HEAD)
+          found=0
+          for c in $commits; do
+            tree=$(git ls-tree -r "$c")
+            links=$(printf '%s\n' "$tree" | awk -F '\t' '$1 ~ /^120000 / { print $2 }')
+            if [ -n "$links" ]; then
+              echo "Symlinks are not allowed in factory or product repos (W2-03). Commit $c has:"
+              printf '%s\n' "$links"
+              found=1
+            fi
+          done
+          exit "$found"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: humyna-labs/factory
           ref: ${{ inputs.factory-ref }}
           path: .factory-tools
           persist-credentials: false
-      - name: no symlinks (W2-03)
-        run: |
-          links=$(git ls-files -s | awk '$1 == "120000"' | cut -f2)
-          if [ -n "$links" ]; then
-            echo "Symlinks are not allowed in factory or product repos (W2-03):"
-            printf '%s\n' "$links"
-            exit 1
-          fi
       - name: secret-guard (mutation-checked rules, R-16)
         run: .factory-tools/hooks/secret-guard.sh --scan-git
       - name: gitleaks (full history)
@@ -131,8 +145,9 @@ jobs:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
-          curl -sSfL --max-time 60 -o "${RUNNER_TEMP}/gitleaks.tgz" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL --max-time 60 -o "${RUNNER_TEMP}/gitleaks.tgz" "$url"
           echo "${GITLEAKS_SHA256}  ${RUNNER_TEMP}/gitleaks.tgz" | sha256sum -c -
           tar -xzf "${RUNNER_TEMP}/gitleaks.tgz" -C "${RUNNER_TEMP}" gitleaks
           "${RUNNER_TEMP}/gitleaks" git --redact --no-banner --exit-code 1 .

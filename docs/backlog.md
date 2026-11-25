@@ -87,6 +87,59 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   over-budget request refused, helper asking for a helper refused, write attempt by a helper blocked
   by the path guard.
 
+## Proposed in D2-night on 2026-11-25 (written only, not built)
+
+- [ ] **BL-25 Deploy products as Workers static assets, through a reviewed template PR.** M, high. Deps: H-03 done
+  (Pages, 2026-11-25), BL-10. Principles: P-11, G-04, R-13, R-18.
+  Context: Cloudflare's "Create application" now starts a Workers flow that opens autoconfig PRs
+  (`docs/failures.md`, 2026-11-25). Deploy configuration is a high-risk path and must never arrive that way.
+  Acceptance: (1) the product template gains one reviewed config file for static assets only (`dist` as the
+  assets directory, no Worker script, SPA fallback), written in the factory and reviewed by the owner; (2) it
+  reaches each product only through a template PR that the owner reviews (`CODEOWNERS` and `high_risk_paths`
+  cover the file); (3) a structure test in the template fails if the config gains a Worker entry point, bindings,
+  routes or any credential, and the factory's R-13 test allows exactly that file while still refusing tokens and
+  API calls (ADR, because R-13 changes); (4) the CSP and security headers stay identical: a check compares the
+  headers of the Pages URL and the Workers URL (`curl -sI`, run by the owner) before the switch; (5) runbook:
+  close every Cloudflare autoconfig PR unmerged, switch the production domain only after (4), keep the Pages
+  project until the Workers deploy has served for one week; (6) no Cloudflare credential enters the container.
+- [ ] **BL-26 The coordinator, not the issue author, sets `risk:low` from the changed paths.** M, high. Deps: BL-11.
+  Principles: P-11, P-01, R-02.
+  Today `assessRisk` takes max(issue label, changed paths) and a missing label counts as high; a `risk:low`
+  label set by whoever wrote the issue still lowers the label part.
+  Acceptance: (1) a risk label from anyone other than the coordinator can only raise risk: `risk:high` from the
+  owner is honoured, `risk:low` from anyone else is ignored and reported in the digest; (2) after verify, the
+  coordinator computes risk from the PR's changed paths against `high_risk_paths` and sets exactly one of
+  `risk:low` or `risk:high` on the issue and the PR itself, with the deciding paths in a PR comment; (3)
+  `high_risk_paths` and `CODEOWNERS` are checked to list the same patterns (structure test in the template), and
+  `feature_list.json` joins both (it is not in either today); (4) unit tests: author `risk:low` plus a high-risk
+  path gives high; no label plus only low paths gives low and the coordinator labels it; owner `risk:high` plus
+  low paths gives high; a `risk:low` added by a non-coordinator actor is ignored; (5) golden cases for each; (6) the
+  label actor is read from the issue's label events (written from memory: the GitHub events API; verify on the first run).
+- [ ] **BL-27 `check-bot-access`: verify the machine token before use.** S, low. Deps: none. Principles: G-01, G-02,
+  G-04, R-05.
+  Context: the token was "pending organization approval" for a day and every call failed with an unexplained 403
+  (`docs/failures.md`). Acceptance: (1) `bin/coordinator check-access` (container, machine token, read-only) reads,
+  for the factory and every product in its configuration, `repos/<owner>/<repo>`, and requires
+  `permissions.push` true and `permissions.admin` false; (2) it requires a repository outside the token's list
+  (for example `humyna-labs/condo-demo`) to answer 404, which proves the repository scope; (3) on a 403 or 404 for
+  a listed repository it prints the likely causes in order: token pending organization approval, repository not
+  granted, token expired, with the dashboard path to check; (4) no write call, ever (a unit test over the
+  assembled `gh` calls); only `GH_TOKEN` reaches the child (R-05); (5) offline tests with a fake `gh` for each
+  outcome; (6) the coordinator runs it before the first task of a run and stops with that message instead of
+  failing mid-task; (7) the runbook's token check, step 4, points to it.
+- [ ] **BL-28 Agent teams: only an L4 candidate, for read-only investigations.** M, high. Deps: BL-W3, BL-13.
+  Principles: P-07, P-08, P-09, P-11.
+  "L4" is the owner's level scale, which this repository does not define; read here as "not before a later
+  autonomy level, with its own ADR". Acceptance: (1) an ADR that allows multi-agent teams only for read-only
+  investigations (failure analysis, reviews, research) and never for writing code, so one writer per task
+  stays (P-08); (2) every team member runs under the reviewer or researcher settings (path guard read-only, no
+  `gh`, no push), on a read-only copy of the task, under a shared budget cap set by the coordinator; (3) the
+  coordinator starts a team only by policy for a named investigation kind, never because an agent asked
+  (BL-W3 rules); (4) a cost comparison on at least three golden investigations, single agent against team
+  (spec 3.1 item 7: multi-agent runs cost about 15 times more), recorded before the ADR is accepted; (5) tests:
+  a team member's write attempt is blocked by the path guard, a team over budget is stopped, and a team is
+  refused for an implementation task.
+
 ## Needs live sessions or the human
 
 - [ ] **BL-11 First live task on resume-sg with the claude runner.** M, high. Deps: H-01, H-02, v1 tag, H-03. Principles: P-04, P-10.
