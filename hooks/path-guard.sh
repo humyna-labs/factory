@@ -144,8 +144,12 @@ check_bash() { # <command>
   fi
   # RULE B2 end
 
-  # RULE B7 begin  (W2-03: no links of any kind, for every role)
-  if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:](`])ln[[:space:]]|symlink[A-Za-z]*[[:space:]]*\(|os\.(sym)?link'; then
+  # RULE B7 begin  (W2-03, verifier P6: no links of any kind, for every role. A heuristic that
+  # catches the usual spellings: ln by any path or quoting, cp -s, any mention of symlink, link()
+  # calls, and the git plumbing that writes a mode-120000 entry. R10, P1 and CI are the hard layers.)
+  if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:](`/\\"'"'"'])ln([[:space:])`"'"'"';&|]|$)' ||
+    printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:](`/\\"'"'"'])cp[[:space:]]([^;&|]*[[:space:]])?(-[A-Za-z]*s[A-Za-z]*|--sym[a-z-]*)([[:space:]=]|$)' ||
+    printf '%s' "$cmd" | grep -Eiq 'symlink|(^|[^A-Za-z_])link(Sync)?[[:space:]]*\(|os\.link|update-index|mktree'; then
     deny B7 "$cmd" "Creating links is not allowed (W2-03): a symlink can expose a file of the host. Write a regular file instead."
   fi
   # RULE B7 end

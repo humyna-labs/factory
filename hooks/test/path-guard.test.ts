@@ -33,12 +33,13 @@ describe("path-guard (R-03, A3)", () => {
   });
 
   it("fails closed on malformed input", () => {
-    const r = spawnSync("bash", [GUARD, "builder"], { input: "not json", encoding: "utf8", env: { PATH: process.env.PATH ?? "" } });
+    // P9: never the real /workspace/runs/guard.log, which BL-09 reads.
+    const r = spawnSync("bash", [GUARD, "builder"], { input: "not json", encoding: "utf8", env: { PATH: process.env.PATH ?? "", FACTORY_GUARD_LOG: "/tmp/factory-guard-test.log" } });
     expect(r.status).toBe(2);
   });
 
   it("ignores read-only tools", () => {
-    const r = spawnSync("bash", [GUARD, "builder"], { input: JSON.stringify({ tool_name: "Read", cwd: WT, tool_input: { file_path: "tests/a.ts" } }), encoding: "utf8" });
+    const r = spawnSync("bash", [GUARD, "builder"], { input: JSON.stringify({ tool_name: "Read", cwd: WT, tool_input: { file_path: "tests/a.ts" } }), encoding: "utf8", env: { PATH: process.env.PATH ?? "", FACTORY_GUARD_LOG: "/tmp/factory-guard-test.log" } });
     expect(r.status).toBe(0);
   });
 });
