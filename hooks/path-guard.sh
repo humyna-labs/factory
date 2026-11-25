@@ -31,7 +31,7 @@ deny() { # <rule> <target> <remediation>
 }
 
 allow() { # <rule>
-  [ "$mode" = check ] && printf 'path-guard: allowed rule=%s\n' "$1" >&2
+  printf 'path-guard: allowed rule=%s\n' "$1" >&2
   exit 0
 }
 
@@ -173,6 +173,7 @@ if [ "${2:-}" = "--check" ]; then
   mode=check
   [ $# -eq 4 ] || { echo "usage: path-guard.sh <role> --check <worktree> <path>" >&2; exit 64; }
   check_path "$3" "$4"
+  exit 2 # fail closed if a rule ever falls through
 fi
 
 command -v jq >/dev/null 2>&1 || deny R0 "-" "jq is missing; path-guard fails closed."
