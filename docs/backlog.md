@@ -7,24 +7,24 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
 
 ## Unattended-ready (low risk)
 
-- [ ] **BL-01 SessionStart hook injects context (R-21).** S, low. Deps: none. Principles: P-06, P-03.
+- [x] **BL-01 SessionStart hook injects context (R-21).** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). S, low. Deps: none. Principles: P-06, P-03.
   Acceptance: `hooks/session-start.sh` prints `progress.md` and the open escalations
   (`/workspace/runs/escalations/*.md`, titles only) as `additionalContext` JSON; wired in every
   `settings/<role>.json` under `SessionStart`; tests with a fake `progress.md`; mutation check for
   each rule; empty or missing files do not fail the session.
-- [ ] **BL-02 Stop hook blocks ending without a report (R-21).** S, low. Deps: none. Principles: P-06, G-01.
+- [x] **BL-02 Stop hook blocks ending without a report (R-21).** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). S, low. Deps: none. Principles: P-06, G-01.
   Acceptance: `hooks/stop-report.sh` exits 2 (or prints `{"decision":"block","reason":...}`)
   when the report path for the session is missing or sections 5 to 8 are empty, reusing the same
   rules as `coordinator/src/report.ts`; respects `stop_hook_active` to avoid loops; tests for
   missing, empty and complete reports; mutation check.
-- [ ] **BL-03 Resume from labels after interruption (spec 3.4).** M, low. Deps: none. Principles: P-01, P-06.
+- [x] **BL-03 Resume from labels after interruption (spec 3.4).** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). M, low. Deps: none. Principles: P-01, P-06.
   Acceptance: queue mode also picks up issues in `factory:tests..pr` states, reuses the worktree
   and the attempt count from `events.jsonl`; killing the coordinator mid-stage and re-running
   finishes the task with no duplicate PR, issue or ledger row for completed stages (test).
-- [ ] **BL-04 Verify stage updates `feature_list.json` (P-06).** S, low. Deps: initializer format (BL-12) or a minimal schema. Principles: P-06.
+- [x] **BL-04 Verify stage updates `feature_list.json` (P-06).** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). S, low. Deps: initializer format (BL-12) or a minimal schema. Principles: P-06.
   Acceptance: after `verify` passes, the coordinator (not a role) marks the task's feature as
   passing and commits it; a Zod schema for the file; path guard keeps blocking roles (R4).
-- [ ] **BL-05 Product clones use the factory push hook; worktree cleanup.** S, low. Deps: none. Principles: P-05, P-12.
+- [x] **BL-05 Product clones use the factory push hook; worktree cleanup.** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). S, low. Deps: none. Principles: P-05, P-12.
   Acceptance: `GitWorkspace` sets `core.hooksPath` to the factory `.githooks` on the product
   clone, runs `git fetch` before `worktree add`, and removes merged or escalated worktrees;
   tests with a local bare remote.
