@@ -1,9 +1,31 @@
 // Shared case tables for the guards. The mutation test re-runs these against scratch copies
 // with one rule disabled; every rule must make at least one case fail (R-16, G-03).
 import { spawnSync } from "node:child_process";
+import { mkdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 
 export const WT = "/tmp/factory-guard-wt";
 export const REPORTS = "/tmp/factory-guard-reports";
+
+// W2-03 fixtures: a symlink that stays inside the worktree (only R10 can stop it) and one to a host file.
+mkdirSync(`${WT}/src`, { recursive: true });
+writeFileSync(`${WT}/src/real.ts`, "export {};\n");
+// Test files import this module in parallel workers: create the links once, tolerate a race.
+for (const [link, target] of [["src/inner.ts", `${WT}/src/real.ts`], ["src/hosts.ts", "/etc/hosts"]] as const) {
+  const p = `${WT}/${link}`;
+  let current: string | undefined;
+  try {
+    current = readlinkSync(p);
+  } catch {
+    current = undefined;
+  }
+  if (current === target) continue;
+  rmSync(p, { force: true });
+  try {
+    symlinkSync(target, p);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+  }
+}
 
 export interface GuardCase {
   name: string;
@@ -46,6 +68,17 @@ export const PATH_GUARD_CASES: GuardCase[] = [
   p("compliance", "tests/a.ts", "deny", "R8"),
   p("compliance", `${REPORTS}/t-1/2026-11-25-t-1-compliance-1.md`, "allow", "R1"),
   p("gardener", "src/App.tsx", "deny", "R9"),
+  // W2-03: symlinks
+  p("builder", "src/inner.ts", "deny", "R10", "builder deny a changed path that is a symlink inside the worktree"),
+  p("builder", "src/hosts.ts", "deny", "R10", "builder deny a symlink to a host file"),
+  { name: "builder Write through a symlink is blocked", role: "builder", kind: "tool", tool: "Write", target: "src/inner.ts", expect: "deny", rule: "R10" },
+  // W2-07: every role is blocked from feature_list.json
+  p("qa", "feature_list.json", "deny", "R4"),
+  p("reviewer", "feature_list.json", "deny", "R4"),
+  p("compliance", "feature_list.json", "deny", "R4"),
+  // W2-10: roles never write the report index
+  p("builder", `${REPORTS}/INDEX.md`, "deny", "R1"),
+  p("qa", `${REPORTS}/INDEX.md`, "deny", "R1"),
   { name: "builder Write tool to tests/ is blocked", role: "builder", kind: "tool", tool: "Write", target: "tests/x.test.ts", expect: "deny", rule: "R7" },
   { name: "builder Edit tool to feature_list.json is blocked", role: "builder", kind: "tool", tool: "Edit", target: `${WT}/feature_list.json`, expect: "deny", rule: "R4" },
   { name: "builder MultiEdit in src is allowed", role: "builder", kind: "tool", tool: "MultiEdit", target: "src/a.ts", expect: "allow", rule: "R7" },
@@ -67,6 +100,12 @@ export const PATH_GUARD_CASES: GuardCase[] = [
   b("compliance", "rm notes.txt", "deny", "B5"),
   b("compliance", "/workspace/factory/hooks/secret-guard.sh --scan-git", "allow", "B0"),
   b("gardener", "ls", "deny", "B6"),
+  b("builder", "ln -s /etc/hosts src/h.ts", "deny", "B7"),
+  b("qa", "cd tests && ln -sf ../x y", "deny", "B7"),
+  b("builder", "ln --symbolic a src/b", "deny", "B7"),
+  b("builder", "ln /etc/hosts src/hard.ts", "deny", "B7"),
+  b("builder", "node -e \"require('fs').symlinkSync('/etc','src/e')\"", "deny", "B7"),
+  b("builder", "echo login && pnpm lint", "allow", "B0"),
 ];
 
 export interface Outcome {

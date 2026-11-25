@@ -7,24 +7,24 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
 
 ## Unattended-ready (low risk)
 
-- [ ] **BL-01 SessionStart hook injects context (R-21).** S, low. Deps: none. Principles: P-06, P-03.
+- [x] **BL-01 SessionStart hook injects context (R-21).** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). S, low. Deps: none. Principles: P-06, P-03.
   Acceptance: `hooks/session-start.sh` prints `progress.md` and the open escalations
   (`/workspace/runs/escalations/*.md`, titles only) as `additionalContext` JSON; wired in every
   `settings/<role>.json` under `SessionStart`; tests with a fake `progress.md`; mutation check for
   each rule; empty or missing files do not fail the session.
-- [ ] **BL-02 Stop hook blocks ending without a report (R-21).** S, low. Deps: none. Principles: P-06, G-01.
+- [x] **BL-02 Stop hook blocks ending without a report (R-21).** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). S, low. Deps: none. Principles: P-06, G-01.
   Acceptance: `hooks/stop-report.sh` exits 2 (or prints `{"decision":"block","reason":...}`)
   when the report path for the session is missing or sections 5 to 8 are empty, reusing the same
   rules as `coordinator/src/report.ts`; respects `stop_hook_active` to avoid loops; tests for
   missing, empty and complete reports; mutation check.
-- [ ] **BL-03 Resume from labels after interruption (spec 3.4).** M, low. Deps: none. Principles: P-01, P-06.
+- [x] **BL-03 Resume from labels after interruption (spec 3.4).** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). M, low. Deps: none. Principles: P-01, P-06.
   Acceptance: queue mode also picks up issues in `factory:tests..pr` states, reuses the worktree
   and the attempt count from `events.jsonl`; killing the coordinator mid-stage and re-running
   finishes the task with no duplicate PR, issue or ledger row for completed stages (test).
-- [ ] **BL-04 Verify stage updates `feature_list.json` (P-06).** S, low. Deps: initializer format (BL-12) or a minimal schema. Principles: P-06.
+- [x] **BL-04 Verify stage updates `feature_list.json` (P-06).** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). S, low. Deps: initializer format (BL-12) or a minimal schema. Principles: P-06.
   Acceptance: after `verify` passes, the coordinator (not a role) marks the task's feature as
   passing and commits it; a Zod schema for the file; path guard keeps blocking roles (R4).
-- [ ] **BL-05 Product clones use the factory push hook; worktree cleanup.** S, low. Deps: none. Principles: P-05, P-12.
+- [x] **BL-05 Product clones use the factory push hook; worktree cleanup.** Done in D2-W2 (see docs/reports/2026-11-25-D2-W2.md). S, low. Deps: none. Principles: P-05, P-12.
   Acceptance: `GitWorkspace` sets `core.hooksPath` to the factory `.githooks` on the product
   clone, runs `git fetch` before `worktree add`, and removes merged or escalated worktrees;
   tests with a local bare remote.
@@ -42,6 +42,51 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
 - [ ] **BL-10 CHANGELOG and semantic version release flow (spec 3.7).** S, low. Deps: v1 tag.
   Acceptance: `CHANGELOG.md`; a documented `v1.x` tag procedure for the human; products pin `@v1`.
 
+- [ ] **BL-23 Timeout helper kills the whole process group (review finding A6).** S, low. Deps: none. Principles: G-04.
+  Acceptance: `with_timeout` in `scripts/lib/common.sh` starts the command in its own process
+  group where bash 3.2 allows it (`set -m` in a subshell), sends `TERM` to the group, waits a grace
+  period (5 s), then sends `KILL`; a test with a command that spawns a child which ignores `TERM`
+  shows both are gone after the grace period; still bash 3.2 compatible (static lint).
+- [ ] **BL-24 Temporary files in human scripts (review finding A7).** S, low. Deps: none. Principles: G-04.
+  Acceptance: every temporary file or directory comes from `mktemp` (`-d` for directories) and is
+  removed by one `EXIT` trap that also keeps `on_exit_report`; no token, header or credential is
+  ever written to a temporary file (grep test over `scripts/` for `GH_TOKEN`, `Authorization`,
+  `auth token` next to a redirection); a test kills the script mid-run and finds no leftover file.
+
+## Proposed by the coach on 2026-11-25 (written only, not built)
+
+- [ ] **BL-W1 Web access by role.** M, high. Deps: BL-12 (roles), BL-13. Principles: P-11, P-08, P-09.
+  Rule: never give one role private data, untrusted web content and a way to send data out at the
+  same time.
+  Acceptance: (1) a read-only `researcher` role with `WebSearch` and `WebFetch`, no secrets in its
+  environment, no write access except its note; its output is a sourced note
+  (`/workspace/runs/research/<task>/<n>.md`, every claim with a URL and retrieval date) that other
+  roles read; (2) `builder` and `qa` may use `WebFetch` only for an allowlist of documentation
+  domains, as Claude Code permission rules by domain (`WebFetch(domain:...)`), and `WebSearch` stays
+  denied; (3) `reviewer` and `compliance` keep no web access; (4) `coordinator/test/web-tools.test.ts`
+  becomes a per-role policy table (role, allowed web rules) and fails on any rule not in the table;
+  (5) a check that no role that may fetch the web also has private data or an outbound write path
+  (the three-way rule above), with a test per role.
+- [ ] **BL-W2 PR review brief for the human.** M, high. Deps: BL-13, BL-11. Principles: P-11, G-01, G-02.
+  Acceptance: (1) a `pr-briefer` role (read-only) writes one PR comment in Chinese with: verdict;
+  changes grouped by risk; evidence, each item marked "run" or "not run"; both reviewers' findings
+  and where they disagree; at most three places the human must read, as links to file and line;
+  (2) the coordinator posts the comment (roles never call GitHub, R-02) and updates it instead of
+  adding a second one on re-runs; (3) PRs that touch a high-risk path always get a second review from
+  a different model (Codex, BL-13); the coordinator decides this from the changed paths
+  (`high_risk_paths`), never an agent, and a PR without the second review cannot leave `pr`;
+  (4) golden cases: low risk (one reviewer), high risk (two reviewers), reviewers disagree.
+- [ ] **BL-W3 Helper requests.** M, low. Deps: BL-13, BL-W1. Principles: P-07, P-09, P-11.
+  Acceptance: (1) a role session may request a helper (security reviewer, second-model reviewer,
+  researcher) by writing `/workspace/runs/requests/<task>/<n>.json` with the helper kind, the reason
+  and a budget (USD and turns), validated by a Zod schema; (2) the coordinator approves or refuses
+  by policy, never by asking an agent: helpers are read-only, work on a read-only copy of the task,
+  run under a budget cap no larger than the policy maximum, and cannot request helpers; every
+  decision is an event and appears in the digest; (3) in-session subagents inherit the role's
+  settings and need no approval (documented in each role file); (4) tests: approved request,
+  over-budget request refused, helper asking for a helper refused, write attempt by a helper blocked
+  by the path guard.
+
 ## Needs live sessions or the human
 
 - [ ] **BL-11 First live task on resume-sg with the claude runner.** M, high. Deps: H-01, H-02, v1 tag, H-03. Principles: P-04, P-10.
@@ -55,6 +100,13 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
 - [ ] **BL-13 Codex reviewer runner (spec 3.3).** M, low. Deps: BL-11. Principles: P-08.
   Acceptance: `runner/codex.ts` in a read-only sandbox, command assembly unit-tested, selected per
   role in the front matter; reviewer role switches to it after a golden run.
+  W2-04 constraint: Codex's own sandbox cannot run in this container (bubblewrap cannot create
+  namespaces, handoff D2-W2 F5), and when it could not read files it fell back to a server-side web
+  search that does not pass through the container firewall. So the runner must (1) disable Codex
+  web search explicitly in the assembled command, asserted by a unit test like
+  `coordinator/test/web-tools.test.ts`, and (2) give Codex a read-only copy of the task (a fresh
+  `git worktree` or archive export owned by another user, or mounted read-only), never the live
+  worktree, since its sandbox will not enforce read-only here.
 - [ ] **BL-14 Telegram command bot (R-06, spec 3.9 bot B).** L, high. Deps: BL-11. Principles: P-11, G-02, G-07.
   Acceptance: separate service under `bot/`, reads exactly `TELEGRAM_BOT_TOKEN`,
   `TELEGRAM_ALLOWED_USER_ID`, `GH_TOKEN` (R-05, test); handles private chats only; acts only when

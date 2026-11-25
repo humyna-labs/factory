@@ -116,6 +116,14 @@ jobs:
           ref: ${{ inputs.factory-ref }}
           path: .factory-tools
           persist-credentials: false
+      - name: no symlinks (W2-03)
+        run: |
+          links=$(git ls-files -s | awk '$1 == "120000"' | cut -f2)
+          if [ -n "$links" ]; then
+            echo "Symlinks are not allowed in factory or product repos (W2-03):"
+            printf '%s\n' "$links"
+            exit 1
+          fi
       - name: secret-guard (mutation-checked rules, R-16)
         run: .factory-tools/hooks/secret-guard.sh --scan-git
       - name: gitleaks (full history)

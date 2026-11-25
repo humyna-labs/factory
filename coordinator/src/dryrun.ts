@@ -1,6 +1,6 @@
 // Dry-run harness (A2): a throwaway product repo generated from the template, a local bare
 // remote, the fake GitHub adapter, stub roles and stub gates. Nothing leaves the machine.
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { loadFactoryConfig } from "./config.ts";
 import type { Deps } from "./coordinator.ts";
@@ -44,15 +44,21 @@ async function must(run: Exec, cwd: string, args: string[]): Promise<void> {
   if (r.code !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.trim()}`);
 }
 
-export async function runFixture(o: { fixture: Fixture; runsDir: string; maxHours: number; log?: (line: string) => void; now?: () => Date }): Promise<FixtureRun> {
+/** resume: keep the scratch repos, worktrees and fake GitHub state of the last run (W2-06). */
+export async function runFixture(o: { fixture: Fixture; runsDir: string; maxHours: number; resume?: boolean; log?: (line: string) => void; now?: () => Date }): Promise<FixtureRun> {
   const f = o.fixture;
   const paths = runPaths(o.runsDir);
   const scratch = join(o.runsDir, "repos");
-  rmSync(scratch, { recursive: true, force: true });
-  rmSync(paths.worktreesDir, { recursive: true, force: true });
-  mkdirSync(scratch, { recursive: true });
   const repoDir = join(scratch, f.product);
   const bare = join(scratch, `${f.product}.git`);
+  const fakeState = join(o.runsDir, "fake-github.json");
+  if (o.resume && existsSync(repoDir) && existsSync(fakeState)) {
+    return runDeps(o, f, paths, repoDir, fakeState);
+  }
+  rmSync(scratch, { recursive: true, force: true });
+  rmSync(paths.worktreesDir, { recursive: true, force: true });
+  rmSync(fakeState, { force: true });
+  mkdirSync(scratch, { recursive: true });
   newProduct({ name: f.product, out: repoDir, owner: f.owner });
   await must(exec, scratch, ["init", "-q", "--bare", "-b", "main", bare]);
   await must(exec, repoDir, ["init", "-q", "-b", "main"]);
@@ -62,9 +68,12 @@ export async function runFixture(o: { fixture: Fixture; runsDir: string; maxHour
   await must(exec, repoDir, ["commit", "-q", "-m", "chore: product from template", "-m", "Agent-Role: coordinator"]);
   await must(exec, repoDir, ["remote", "add", "origin", bare]);
   await must(exec, repoDir, ["push", "-q", "origin", "main"]);
+  return runDeps(o, f, paths, repoDir, fakeState);
+}
 
+async function runDeps(o: { maxHours: number; log?: (line: string) => void; now?: () => Date }, f: Fixture, paths: RunPaths, repoDir: string, fakeState: string): Promise<FixtureRun> {
   const cfg = loadFactoryConfig(join(repoDir, ".factory", "factory.yaml"));
-  const gh = new FakeGitHub(f.issues.map((i) => ({ ...i, owner: f.owner, repo: f.product, state: "open" as const })));
+  const gh = new FakeGitHub(f.issues.map((i) => ({ ...i, owner: f.owner, repo: f.product, state: "open" as const })), fakeState);
   const log = o.log ?? (() => undefined);
   const runner = new StubRunner(f.scenarios, (s) => {
     const inv = buildClaudeInvocation(s, loadRoleConfig(s.role), { baseBranch: cfg.base_branch, reportsDir: paths.reportsDir, guardLog: paths.guardLog });

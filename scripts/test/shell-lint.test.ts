@@ -46,7 +46,7 @@ describe("shell scripts", () => {
   it.each(HUMAN)("human script %s passes the R-08 lint", (f) => {
     expect(lintHumanScript(readFileSync(join(ROOT, f), "utf8"))).toEqual([]);
   });
-  it.each(["scripts/lib/common.sh"])("helper %s passes the R-08 lint for syntax", (f) => {
+  it.each(["scripts/lib/common.sh", "scripts/lib/guards.sh"])("helper %s passes the R-08 lint for syntax", (f) => {
     expect(lintHumanScript(readFileSync(join(ROOT, f), "utf8") + "\n# --dry-run\n")).toEqual([]);
   });
 });

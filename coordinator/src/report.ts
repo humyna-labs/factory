@@ -1,5 +1,5 @@
 // R-20: every role session must leave a report written from docs/templates/run-report.md.
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Stage } from "./state.ts";
 
@@ -56,4 +56,20 @@ export function checkReport(path: string): ReportCheck {
   }
   if (proposedHarnessFix && /^none\.?$/i.test(proposedHarnessFix)) proposedHarnessFix = undefined;
   return proposedHarnessFix === undefined ? { ok: problems.length === 0, problems } : { ok: problems.length === 0, problems, proposedHarnessFix };
+}
+
+export const REPORT_INDEX_HEADER = "| path | repo | issue | stage | attempt | utc |\n|---|---|---|---|---|---|\n";
+
+/**
+ * W2-10: one line per role-session report in <reportsDir>/INDEX.md, for the human's harvest
+ * script (the reports live outside git). Append-only; the header is written once. Roles cannot
+ * write this file (path-guard R1 allows only <reportsDir>/<task>/<name>.md).
+ */
+export function appendReportIndex(reportsDir: string, e: { path: string; repo: string; issue: number; stage: Stage; attempt: number; utc: string }): string {
+  const index = join(reportsDir, "INDEX.md");
+  mkdirSync(reportsDir, { recursive: true });
+  if (!existsSync(index)) appendFileSync(index, REPORT_INDEX_HEADER);
+  const cell = (v: string | number) => String(v).replace(/[|\n\r]/g, " ");
+  appendFileSync(index, `| ${cell(e.path)} | ${cell(e.repo)} | ${e.issue} | ${e.stage} | ${e.attempt} | ${cell(e.utc)} |\n`);
+  return index;
 }

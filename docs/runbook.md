@@ -3,17 +3,63 @@
 Human steps (H-xx) and routine checks. Every step that can be a script is one (R-08, G-04).
 Steps marked "written from memory, not verified" describe dashboards the factory cannot see.
 
-## Order to take a product live (first time)
+## Reviewed clone (host, before any script)
 
-1. Merge the factory PR (`factory/v1`) after review (R-19).
-2. H-01 on the factory: `scripts/setup-repo.sh humyna-labs/factory` (profile factory: no status checks).
-3. H-02 on the factory: `scripts/install-workflows.sh humyna-labs/factory`, review and merge the PR.
-4. Tag the factory: `git tag v1 <merge commit of step 3> && git push origin v1` (host, your account).
-   Products call `humyna-labs/factory/.github/workflows/gates.yml@v1`.
-5. H-04 if the product repo does not exist yet; generate its content (below).
-6. H-01 on the product: `scripts/setup-repo.sh humyna-labs/resume-sg`, then the verification below.
-7. H-02 on the product: `scripts/install-workflows.sh humyna-labs/resume-sg`, merge the PR.
-8. H-03: connect the product to Cloudflare Pages.
+Never run `scripts/*.sh` from `~/ai-projects/agent-factory`: it is bind-mounted into the factory
+container, so the agent can change any file in it, including the scripts themselves (handoff
+D2-W2 E2, F4). The scripts refuse to run from there, and from any checkout that is dirty or not at its
+upstream (guard G10). That catches accidents only; this separate clone is the real control.
+
+```
+git clone https://github.com/humyna-labs/factory.git ~/factory-reviewed   # outside ~/ai-projects/agent-factory
+cd ~/factory-reviewed
+git checkout main
+git pull --ff-only
+git rev-parse HEAD        # compare with the merge commit shown on the merged pull request
+git status --short        # must print nothing
+```
+
+Run every script from `~/factory-reviewed`. Before each later session: `git pull --ff-only` and
+compare `git rev-parse HEAD` again. The scripts print the commit they run from.
+
+## Tonight (2026-11-25): order of human steps
+
+ADR 0002 gives two options for the approval deadlock. An author cannot approve his own PR, and
+`install-workflows.sh` opens its PR as you. Choose one option. The recommendation is (b).
+
+Common start (both options):
+1. Host, in `~/ai-projects/agent-factory`: push `factory/v1` and `factory/v1.1` (the bot gets
+   403, F1). Review and merge the `factory/v1` PR with a merge commit, then open and merge
+   `factory/v1.1` into `main` the same way. No ruleset exists yet, so you can merge your own PRs.
+2. Make the reviewed clone (section above) at the merged `main`.
+3. Check the bot's organization role: `gh api orgs/humyna-labs/memberships/humyna-bot --jq .role`
+   must print `member`. If it prints `admin`, change it to member under Organization > People.
+
+Option (b), one OrganizationAdmin bypass in pull-request mode (recommended):
+4. `scripts/setup-repo.sh humyna-labs/factory --dry-run --owner-bypass`, then the same without
+   `--dry-run`. Read the plan, type `yes`.
+5. `scripts/install-workflows.sh humyna-labs/factory --dry-run --source .`, then
+   `scripts/install-workflows.sh humyna-labs/factory`. Read the whole diff, type `yes`, then merge the PR on
+   GitHub through the bypass.
+6. `git pull --ff-only`, then tag the merge commit: `git tag v1 <sha> && git push origin v1`.
+7. H-04 if `humyna-labs/resume-sg` does not exist yet, then
+   `scripts/setup-repo.sh humyna-labs/resume-sg --owner-bypass` (dry run first).
+8. `scripts/install-workflows.sh humyna-labs/resume-sg`. Wait until all five `gates / ...` checks
+   are green, then merge through the bypass. Never merge through the bypass with red or pending checks.
+9. H-01 verification (below), H-03 (Cloudflare Pages), then give `humyna-bot` Write on
+   `humyna-labs/factory` and `humyna-labs/resume-sg` (ADR 0002, decision 1), only after the rulesets are on.
+
+Option (a), order only:
+4. `scripts/install-workflows.sh humyna-labs/factory` (dry run first), type `yes`, merge the PR.
+   Tag `v1` as in (b) step 6.
+5. H-04 if needed. `scripts/install-workflows.sh humyna-labs/resume-sg`, wait for green checks,
+   merge.
+6. Only now: `scripts/setup-repo.sh humyna-labs/factory` and
+   `scripts/setup-repo.sh humyna-labs/resume-sg` (dry runs first).
+7. H-01 verification, H-03, then the bot's Write access as in (b) step 9.
+8. Later, for any PR you open yourself: Settings > Rules > `factory-main` > Enforcement:
+   Disabled, merge, then re-run `scripts/setup-repo.sh humyna-labs/<repo>` (it turns enforcement back on and
+   reads every field back). Log each time in `docs/failures.md`.
 
 Always run a script with `--dry-run` first. Scripts refuse to run inside the container (G-07).
 
@@ -24,11 +70,19 @@ scripts/setup-repo.sh humyna-labs/<repo> --dry-run
 scripts/setup-repo.sh humyna-labs/<repo>
 ```
 
-It enables auto-merge (squash only, delete merged branches), creates the labels in
-`scripts/labels.txt`, and creates or updates the ruleset `factory-main` on the default branch:
-no deletion, no force push, pull request required with 0 approvals plus code-owner review,
-and (products only) the five required checks `gates / typecheck`, `gates / lint`, `gates / unit`,
-`gates / e2e`, `gates / secrets`. It reads everything back at the end.
+It first reads everything (admin rights, merge settings, workflow token, team, existing
+ruleset, labels, the bot's org role with `--owner-bypass`). Then it prints the plan, with the existing ruleset next to the new one,
+and waits for you to type `yes`. Only then does it change anything. Per profile (ADR 0002):
+- factory: 1 approval plus code-owner review, merge commits and squash, no auto-merge, and required checks
+  only with `--require-checks "<context>,..."`.
+- product: 0 approvals plus code-owner review, squash only, auto-merge on, and the five required
+  checks `gates / typecheck`, `gates / lint`, `gates / unit`, `gates / e2e`, `gates / secrets`, with the
+  branch up to date.
+
+Both profiles: the default workflow token is read-only, the labels come from `scripts/labels.txt`
+(validated first), and `--owner-bypass` adds the single OrganizationAdmin pull-request bypass.
+It reads every field back at the end and names any field that differs. If it fails part-way, it prints
+which remote changes were already made. Every step is idempotent, so re-run the same command.
 
 The check names follow the "<caller job> / <called job>" pattern; written, not verified. After
 the first CI run, compare them with the PR's checks list and fix `CHECKS` in the script if they
@@ -63,8 +117,12 @@ scripts/install-workflows.sh humyna-labs/<repo> --dry-run --source <local checko
 scripts/install-workflows.sh humyna-labs/<repo>
 ```
 
-It clones the repo, copies `ci/workflows/*.yml` to `.github/workflows/`, shows the diff, and
-opens a pull request. Your token needs the workflow scope. Agents never write
+It clones the repo and checks that `origin` really is `https://github.com/humyna-labs/<repo>.git`
+after your git `insteadOf` rules. It refuses any symlink in the clone. It copies only regular `*.yml`
+or `*.yaml` files (64 KiB at most) from `ci/workflows/`, and refuses any workflow without a top-level
+`permissions:` block or with a write scope. It then shows the full diff and waits for you to type `yes`
+before it pushes a branch and opens a PR. If an install PR is already open, it stops and prints its URL.
+Your token needs the workflow scope. Agents never write
 `.github/workflows/` (R-18); they edit `ci/workflows/` and you install after review.
 
 ## H-03 Connect a product to Cloudflare Pages (dashboard; written from memory, not verified)

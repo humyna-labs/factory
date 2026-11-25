@@ -16,7 +16,7 @@ import { exec } from "./exec.ts";
 import { ShellGates } from "./gates/shell.ts";
 import { GhGitHub } from "./github/gh.ts";
 import { DEFAULT_CODE_OWNER, newProduct } from "./new-product.ts";
-import { DEFAULT_RUNS_DIR, DRY_RUN_RUNS_DIR, runPaths } from "./paths.ts";
+import { DEFAULT_RUNS_DIR, DRY_RUN_RUNS_DIR, factoryPath, runPaths } from "./paths.ts";
 import { formatDigest, runQueue, writeDigest } from "./queue.ts";
 import { RunsCsvWriter, validateRunsCsv } from "./runs-csv.ts";
 import { ClaudeRunner } from "./runner/claude.ts";
@@ -24,7 +24,7 @@ import { loadRoleConfig } from "./runner/roles.ts";
 import { GitWorkspace } from "./workspace/git.ts";
 
 const USAGE = `usage:
-  coordinator [run] --dry-run [--max-hours N] [--runs-dir DIR] [--verbose]
+  coordinator [run] --dry-run [--resume] [--max-hours N] [--runs-dir DIR] [--verbose]
   coordinator run --queue --max-hours N --repo-dir DIR [--runs-dir DIR]
   coordinator run --task <repo>#<n> --repo-dir DIR [--runs-dir DIR]
   coordinator validate-runs <runs.csv>
@@ -37,6 +37,7 @@ async function main(argv: string[]): Promise<number> {
     allowPositionals: true,
     options: {
       "dry-run": { type: "boolean", default: false },
+      resume: { type: "boolean", default: false },
       queue: { type: "boolean", default: false },
       "max-hours": { type: "string" },
       task: { type: "string" },
@@ -80,8 +81,9 @@ async function main(argv: string[]): Promise<number> {
 
   if (values["dry-run"]) {
     const runsDir = values["runs-dir"] ?? DRY_RUN_RUNS_DIR;
-    console.log(`dry-run: stub roles, stub gates, fake GitHub; ledger ${join(runsDir, "runs.csv")}`);
-    const { digest, paths } = await runFixture({ fixture: loadFixture(values.fixture ?? DRY_RUN_FIXTURE), runsDir, maxHours, log: values.verbose ? console.log : () => undefined });
+    console.log(`dry-run: stub roles, stub gates, fake GitHub; ledger ${join(runsDir, "runs.csv")}${values.resume ? "; resuming the last dry run" : ""}`);
+    console.log("dry-run: the factory pre-push hook is not set on the throwaway clone (its local bare remote is not a GitHub URL)");
+    const { digest, paths } = await runFixture({ fixture: loadFixture(values.fixture ?? DRY_RUN_FIXTURE), runsDir, maxHours, resume: values.resume, log: values.verbose ? console.log : () => undefined });
     const file = writeDigest(paths.runsDir, digest);
     console.log(formatDigest(digest));
     console.log(`digest written to ${file}`);
@@ -97,9 +99,9 @@ async function main(argv: string[]): Promise<number> {
   const deps: Deps = {
     cfg,
     gh,
-    runner: new ClaudeRunner({ exec, loadRole: loadRoleConfig, baseBranch: cfg.base_branch, reportsDir: paths.reportsDir, guardLog: paths.guardLog }),
+    runner: new ClaudeRunner({ exec, loadRole: loadRoleConfig, baseBranch: cfg.base_branch, reportsDir: paths.reportsDir, guardLog: paths.guardLog, escalationsDir: paths.escalationsDir }),
     gates: new ShellGates(cfg, exec),
-    workspace: new GitWorkspace(exec, { repoDir, worktreesDir: paths.worktreesDir, baseBranch: cfg.base_branch, remote: "origin" }),
+    workspace: new GitWorkspace(exec, { repoDir, worktreesDir: paths.worktreesDir, baseBranch: cfg.base_branch, remote: "origin", pushHookPath: factoryPath(".githooks") }),
     exec,
     ledger: new RunsCsvWriter(paths.runsCsv),
     events: new EventLog(paths.events),
