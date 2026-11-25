@@ -1,8 +1,10 @@
+// @vitest-environment node
 // Structural test (P-05): the Cloudflare Pages headers file keeps a strict CSP.
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const headers = readFileSync(new URL("../../public/_headers", import.meta.url), "utf8");
+const headers = readFileSync(join(import.meta.dirname, "..", "..", "public", "_headers"), "utf8");
 const csp = /Content-Security-Policy:\s*(.+)/.exec(headers)?.[1] ?? "";
 
 describe("public/_headers", () => {
