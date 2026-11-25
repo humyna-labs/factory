@@ -43,6 +43,13 @@ check_path() { # <root> <path>
     *) target=$(realpath -m -- "$root/$2") ;;
   esac
   reports=$(realpath -m -- "$REPORTS_DIR")
+  case "$2" in /*) raw=$2 ;; *) raw="$root/$2" ;; esac
+
+  # RULE R10 begin  (W2-03: never create, change or write through a symlink)
+  if [ -L "$raw" ]; then
+    deny R10 "$2" "Symlinks are not allowed in factory or product repos (W2-03). Write a regular file instead."
+  fi
+  # RULE R10 end
 
   # RULE R1 begin  (the session report is the one write allowed outside the worktree, R-20)
   case "$target" in
@@ -136,6 +143,12 @@ check_bash() { # <command>
     deny B2 "$cmd" "Harness files (.github, .githooks, .factory, .claude, feature_list.json, CODEOWNERS) are off limits in shell commands. Use the Read tool to read them."
   fi
   # RULE B2 end
+
+  # RULE B7 begin  (W2-03: no links of any kind, for every role)
+  if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:](`])ln[[:space:]]|symlink[A-Za-z]*[[:space:]]*\(|os\.(sym)?link'; then
+    deny B7 "$cmd" "Creating links is not allowed (W2-03): a symlink can expose a file of the host. Write a regular file instead."
+  fi
+  # RULE B7 end
 
   case "$role" in
     builder)
