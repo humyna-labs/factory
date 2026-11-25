@@ -61,6 +61,19 @@ describe("pre-push hook (R-07)", () => {
     const r = repo();
     expect(r.push(GOOD_URL, "refs/heads/f", r.commit("feat: café\n\nAgent-Role: builder")).stderr).toMatch(/not ASCII/);
   });
+  it("fails closed when git config user.email is not set (Codex 8)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "factory-prepush-noid-"));
+    const env = { PATH: process.env.PATH ?? "", HOME: dir, GIT_CONFIG_NOSYSTEM: "1" };
+    const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, encoding: "utf8", env });
+    git("init", "-q", "-b", "main");
+    writeFileSync(join(dir, "a.txt"), "a");
+    git("add", "-A");
+    git("-c", "user.name=b", "-c", "user.email=b@localhost", "commit", "-q", "-m", "x\n\nAgent-Role: builder");
+    const sha = git("rev-parse", "HEAD").stdout.trim();
+    const out = spawnSync("bash", [HOOK, "origin", GOOD_URL], { cwd: dir, encoding: "utf8", env, input: `refs/heads/x ${sha} refs/heads/f ${ZERO}\n` });
+    expect(out.status).toBe(1);
+    expect(out.stderr).toMatch(/user\.email is not set/);
+  });
   it("rejects a commit by another author", () => {
     const r = repo();
     expect(r.push(GOOD_URL, "refs/heads/f", r.commit("feat: x\n\nAgent-Role: builder", "b.txt", "Someone <someone@localhost>")).stderr).toMatch(/machine account/);

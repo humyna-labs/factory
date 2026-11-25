@@ -3,6 +3,8 @@
 # ASCII commits that carry an Agent-Role trailer and the machine account as author.
 # Git calls it as: pre-push <remote-name> <remote-url>, with "<local ref> <local sha>
 # <remote ref> <remote sha>" lines on stdin. Enable with: git config core.hooksPath .githooks
+# D2-night (Codex 8, 14): every git call fails closed, the pushed tip is always inspected, and a
+# URL is never printed with its user info. Rules sit between "# RULE <id> begin/end".
 set -u
 ALLOWED_OWNER=humyna-labs
 MAX_FILES_PER_COMMIT=${FACTORY_MAX_FILES_PER_COMMIT:-40}
@@ -12,13 +14,19 @@ SYMLINK_GUARD="$(cd "$(dirname "$0")/.." && pwd)/hooks/symlink-guard.sh"
 
 fail() { printf 'pre-push: REJECTED: %s\n' "$1" >&2; exit 1; }
 
+shown_url=$url
+# RULE P4 begin  (Codex 14: user info in a URL can hold a token; never print it)
+shown_url=$(printf '%s' "$url" | sed -E 's#^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@#\1#; s#^[^/@:]+@([^/:]+:)#\1#')
+# RULE P4 end
+
 # Owner from https://github.com/OWNER/repo(.git), git@github.com:OWNER/repo, ssh://git@github.com/OWNER/repo
 owner=$(printf '%s' "$url" | sed -nE 's#^(https://([^@/]+@)?github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+)/[^/]+$#\3#p')
-[ -n "$owner" ] || fail "remote URL '${url}' is not a GitHub repository URL; refusing to push"
+[ -n "$owner" ] || fail "remote URL '${shown_url}' is not a GitHub repository URL; refusing to push"
 [ "$owner" = "$ALLOWED_OWNER" ] || fail "remote owner '${owner}' is not ${ALLOWED_OWNER}"
 
 [ -x "$SYMLINK_GUARD" ] || fail "symlink guard missing at ${SYMLINK_GUARD}; failing closed"
-author_email=$(git config user.email || true)
+author_email=$(git config user.email) || fail "git config user.email is not set; the hook compares every commit author with it"
+[ -n "$author_email" ] || fail "git config user.email is empty"
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ -n "${local_ref:-}" ] || continue
   case "$remote_ref" in
@@ -27,19 +35,32 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     *) fail "only branches may be pushed (got ${remote_ref}); tags are made by the human" ;;
   esac
   [ "$local_sha" = "$zero" ] && fail "deleting remote branches is not allowed from the factory"
-  if [ "$remote_sha" = "$zero" ]; then range=$(git rev-list "$local_sha" --not --remotes) ; else range=$(git rev-list "$remote_sha..$local_sha"); fi
+  range_rc=0
+  if [ "$remote_sha" = "$zero" ]; then
+    range=$(git rev-list "$local_sha" --not --remotes 2>/dev/null) || range_rc=$?
+  else
+    range=$(git rev-list "$remote_sha..$local_sha" 2>/dev/null) || range_rc=$?
+  fi
+  # RULE P2 begin  (Codex 8: a failed enumeration must not look like "no new commits")
+  [ "$range_rc" = 0 ] || fail "git rev-list failed for ${local_sha} (remote ${remote_sha}; is the remote commit fetched?); failing closed"
+  # RULE P2 end
+  commits=$range
+  # RULE P3 begin  (Codex 8: inspect the pushed tip even when a remote-tracking ref already has it)
+  commits=$(printf '%s\n%s\n' "$local_sha" "$range" | awk 'NF && !seen[$0]++')
+  # RULE P3 end
   # RULE P1 begin  (W2-03: no pushed commit may contain a symlink; fails closed if the guard is missing)
-  for c in $range; do
-    "$SYMLINK_GUARD" --commits -n 1 "$c" || fail "commit ${c} contains a symlink (W2-03); replace it with a regular file"
+  for c in $commits; do
+    "$SYMLINK_GUARD" --commits -n 1 "$c" || fail "commit ${c} contains a symlink or could not be inspected (W2-03); replace it with a regular file"
   done
   # RULE P1 end
-  for c in $range; do
-    msg=$(git log -1 --format=%B "$c")
+  for c in $commits; do
+    msg=$(git log -1 --format=%B "$c") || fail "cannot read the message of ${c}; failing closed"
     if printf '%s' "$msg" | LC_ALL=C grep -q '[^ -~[:space:]]'; then fail "commit ${c} message is not ASCII"; fi
     printf '%s\n' "$msg" | grep -Eq '^Agent-Role: [a-z-]+$' || fail "commit ${c} has no 'Agent-Role: <role>' trailer"
-    a=$(git log -1 --format=%ae "$c")
-    [ -z "$author_email" ] || [ "$a" = "$author_email" ] || fail "commit ${c} is not authored by the configured machine account"
-    n=$(git diff-tree --no-commit-id --name-only -r --root "$c" | wc -l | tr -d ' ')
+    a=$(git log -1 --format=%ae "$c") || fail "cannot read the author of ${c}; failing closed"
+    [ "$a" = "$author_email" ] || fail "commit ${c} is not authored by the configured machine account"
+    files=$(git diff-tree --no-commit-id --name-only -r --root "$c") || fail "cannot list the files of ${c}; failing closed"
+    n=$(printf '%s\n' "$files" | awk 'NF' | wc -l | tr -d ' ')
     [ "$n" -le "$MAX_FILES_PER_COMMIT" ] || fail "commit ${c} touches ${n} files (max ${MAX_FILES_PER_COMMIT}); split it into smaller commits"
   done
 done
