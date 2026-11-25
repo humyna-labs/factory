@@ -1,0 +1,7 @@
+packages:
+  - coordinator
+  - hooks
+  - scripts
+  - evals
+# templates/product is a template, not a workspace package. It is checked by generating
+# a product into a temporary directory (see docs/runbook.md, "Check the product template").
