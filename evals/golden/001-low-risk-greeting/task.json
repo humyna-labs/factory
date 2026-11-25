@@ -1,0 +1,14 @@
+{
+  "product": "golden-product",
+  "owner": "humyna-labs",
+  "issues": [
+    {
+      "number": 1,
+      "title": "Show a greeting under the page heading",
+      "labels": ["factory:ready", "risk:low", "priority:p1"],
+      "body": "Acceptance: the home page shows 'Welcome' under the heading. Synthetic copy only."
+    }
+  ],
+  "scenarios": { "golden-product#1": {} },
+  "expected": { "golden-product#1": "auto-merge" }
+}

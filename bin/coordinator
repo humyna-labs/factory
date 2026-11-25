@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Thin wrapper: run the coordinator CLI with Node type stripping (Node >= 22.18).
+set -eu
+here=$(cd "$(dirname "$0")" && pwd)
+exec node "${here}/../coordinator/src/cli.ts" "$@"

@@ -1,0 +1,22 @@
+{
+  "product": "resume-sg",
+  "owner": "humyna-labs",
+  "issues": [
+    { "number": 101, "title": "Add a greeting line to the home page", "labels": ["factory:ready", "risk:low", "priority:p1"], "body": "Show a one-line greeting under the heading. Synthetic copy only." },
+    { "number": 102, "title": "Allow the self-hosted font in the CSP", "labels": ["factory:ready", "risk:high", "priority:p0"], "body": "Security header change: needs human approval." },
+    { "number": 103, "title": "Parse resume dates in month-year format", "labels": ["factory:ready", "risk:low", "priority:p2"], "body": "Accept dates like 2024-03. The stub verify gate fails on every attempt." },
+    { "number": 104, "title": "Show parsed dates on the page", "labels": ["factory:ready", "risk:low", "priority:p1"], "body": "Uses the date parser.\nDepends-on: #102" }
+  ],
+  "scenarios": {
+    "resume-sg#101": {},
+    "resume-sg#102": { "changes": ["src/features/issue-102.ts"] },
+    "resume-sg#103": { "verify": ["fail"], "builder": ["fail", "pass"] },
+    "resume-sg#104": {}
+  },
+  "expected": {
+    "resume-sg#101": "auto-merge",
+    "resume-sg#102": "needs-human",
+    "resume-sg#103": "escalated",
+    "resume-sg#104": "skipped"
+  }
+}

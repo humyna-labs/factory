@@ -1,0 +1,8 @@
+{
+  "final": "auto-merge",
+  "stages": ["tests:pass", "impl:pass", "verify:pass", "review:pass", "compliance:pass", "pr:pass", "pr:auto-merge"],
+  "merged": true,
+  "escalated": false,
+  "labels": ["factory:auto-merge"],
+  "reports": 4
+}
