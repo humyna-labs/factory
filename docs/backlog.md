@@ -32,7 +32,7 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   Acceptance: 20 cases in `evals/golden/` covering each failure class (no report, out-of-scope
   write, red check, verify fail, review fail, high-risk path, blocked dependency, time budget);
   `node evals/golden/run.ts` passes; a rubric file for the later LLM judge.
-- [ ] **BL-07 Runbook: pause and resume, rollback, token rotation, add a role or gate (spec 3.7).** S, low. Deps: none.
+- [ ] **BL-07 Runbook: pause and resume, rollback, token rotation, add a role or gate (spec 3.7).** S, low. Source: FL-13, partly; see BL-49 (review after resume-sg). Deps: none.
   Acceptance: each procedure is a script with `--dry-run` where possible, or numbered dashboard steps.
 - [ ] **BL-08 Escalations append a draft entry to `docs/failures.md` (principles rule 3).** S, low. Deps: none.
   Acceptance: the harness-fix draft includes a ready-to-paste failures entry; test.
@@ -139,19 +139,19 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   (spec 3.1 item 7: multi-agent runs cost about 15 times more), recorded before the ADR is accepted; (5) tests:
   a team member's write attempt is blocked by the path guard, a team over budget is stopped, and a team is
   refused for an implementation task.
-- [ ] **BL-29 Coordinator merges set a noreply author email.** S, high. Deps: none. Principles: R-02, R-05, R-07.
+- [ ] **BL-29 Coordinator merges set a noreply author email.** S, high. Source: FL-11 (review after resume-sg). Deps: none. Principles: R-02, R-05, R-07.
   Owner, 2026-11-26 12:30 SGT: the squash merges of resume-sg #16 and #17 recorded the machine account's private
   email as the author. Acceptance: (1) `GhGitHub.merge` passes `--author-email` with the bot's noreply address
   (`<id>+humyna-bot@users.noreply.github.com`, from configuration, not hard-coded in two places); (2) a unit test
   over the assembled `gh pr merge` arguments; (3) a check after the first merge reads the merge commit's author
   email and stops the queue if it is not a noreply address. Never rewrite the history of any repository; the two
   recorded merges stay as they are.
-- [ ] **BL-30 Daily scan of public repositories for non-noreply author or committer emails.** S, low. Deps: BL-18.
+- [ ] **BL-30 Daily scan of public repositories for non-noreply author or committer emails.** S, low. Source: FL-11 (review after resume-sg). Deps: BL-18.
   Principles: P-02, R-05. Owner, 2026-11-26. Acceptance: (1) a read-only script lists, per public humyna-labs
   repository, commits whose author or committer email is not a `users.noreply.github.com` address (or GitHub's
   own `noreply@github.com` for web merges); (2) it prints counts and short SHAs only, never the addresses; (3) it
   runs daily and reports in the digest; (4) it never changes history; remediation stays a human decision.
-- [ ] **BL-31 When a PR merges, check every other open factory PR and bring it up to date.** M, high. URGENT (owner,
+- [ ] **BL-31 When a PR merges, check every other open factory PR and bring it up to date.** M, high. Source: FL-03 (review after resume-sg). URGENT (owner,
   2026-11-26 14:45 SGT: the owner had to press Update branch by hand on #18 and #26). Deps: none.
   Principles: P-01, P-02. Owner, 2026-11-26 13:35 SGT; found in jd2cv-m1: resume-sg PR #18 (base-resume) went DIRTY
   when the design-system PR #22 merged, so its auto-merge could never happen; every UI issue adds keys to the same two
@@ -175,13 +175,13 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   pointing at an agent commit no longer hides it; a fetched main with GitHub-made merges still passes;
   (4) GitHub's ruleset stays the hard control for `main` (R-07).
 - [ ] **BL-33 gates.yml: gitleaks scans the PR's own range plus main, not every branch.** S, high (CI, the owner
-  installs). Deps: none. Principles: P-02, R-18. Owner, 2026-11-26 14:45 SGT: the "gitleaks (full history)" step scans
+  installs). Source: FL-10 (review after resume-sg). Deps: none. Principles: P-02, R-18. Owner, 2026-11-26 14:45 SGT: the "gitleaks (full history)" step scans
   `--all` branches, so a false positive on one branch (generic-api-key on the i18n key `disclaimer.5.body` after
   "Your API key.", resume-sg PR #26) failed every open PR (#18 too). Acceptance: (1) the step scans
   `origin/main..HEAD` of the PR plus the history of `main` (`--log-opts`), nothing from other branches; (2) a fixture
   repo with a finding on an unrelated branch passes, a finding in the PR range fails, a finding on main fails;
   (3) step and job names unchanged (required checks); (4) installed through `install-workflows.sh` and the `v1` tag.
-- [ ] **BL-34 `.gitleaks.toml` and `.gitleaksignore` are high-risk paths.** S, high. Deps: none. Principles: R-03,
+- [ ] **BL-34 `.gitleaks.toml` and `.gitleaksignore` are high-risk paths.** S, high. Source: FL-10 (review after resume-sg). Deps: none. Principles: R-03,
   P-11. Owner, 2026-11-26: add `/.gitleaks.toml` and `/.gitleaksignore` to `high_risk_paths` in the product template's
   `.factory/factory.yaml` and to its `CODEOWNERS`, and to resume-sg through a reviewed PR; path-guard R3 refuses both
   for every role. Acceptance: a structure test keeps factory.yaml and CODEOWNERS in sync for these paths; a guard case
@@ -209,6 +209,93 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   the tests, red check against the current code allows already-passing new tests only for a Test-gap), then impl and the
   normal stages, counted with BL-36's rewrite budget; (3) a stub-runner flow test and a mutation check.
 
+## From the coach's factory lessons and the D3 run, 2026-11-26 (written only, not built; review after resume-sg)
+
+Input: `/workspace/runs/plans/factory-review/factory-lessons-resume-sg.md` (coach, read on 2026-11-26 23:55 SGT; the
+file holds FL-01 to FL-14, not FL-28). Existing items that cover an FL item carry "Source: FL-xx" above. BL-50 to
+BL-52 come from the D3 escalations (`docs/failures.md`, 2026-11-26).
+
+- [ ] **BL-38 Duty officer: tiered authority so the owner decides in two short batches a day.** L, high. Deps: BL-41,
+  BL-14. Principles: P-11, G-02, G-07. Source: FL-01 (P0). Review after resume-sg. The coach's draft: T0 automatic
+  (low-risk merge with green CI, Update branch, retries), T1 a read-only proxy plus an independent second review
+  decides clarifications the spec already answers and medium-risk PRs (path allowlist, no new dependency, no network or
+  storage change, tests present), T2 the owner approves in batches (high-risk PRs, scope changes), T3 only the owner
+  (secrets, installs, rulesets, guardrail files, deletion, release). Acceptance: (1) an ADR with the tiers and the threat
+  model (prompt injection through untrusted issue, JD or resume text is the main risk); (2) the decision policy is a
+  file under CODEOWNERS that the proxy cannot change; (3) the proxy is read-only, without network, and only comments;
+  the coordinator executes; (4) T1 merges need agreement of the reviewer, the proxy and a second model family;
+  (5) metrics in the digest: owner interruptions per day, owner minutes, queue time idle waiting for the owner, proxy
+  decisions overturned.
+- [ ] **BL-39 Schedule by the dependency graph; never idle while a high-risk PR waits.** M, low. Deps: none.
+  Principles: P-01, P-07. Source: FL-02 (P0). Review after resume-sg. On 2026-11-26 the operator did this by hand
+  (owner's 20:30 SGT rule). Acceptance: (1) the queue loops until its time budget, re-reading issues after each task;
+  (2) it sets `factory:ready` itself on an issue whose `Depends-on` issues are all closed by a merged PR (the only label
+  move it adds); (3) a needs-human PR never blocks tasks that do not depend on it; (4) the merge wait applies only to
+  tasks that depend on the waiting PR; (5) stub-runner tests with a fake GitHub for a chain, a fork and a high-risk wait.
+- [ ] **BL-40 Inbox for owner-signed requirement packs.** M, high. Deps: none. Principles: G-02, P-11. Source: FL-04
+  item 1 (P1). Review after resume-sg. Acceptance: (1) the operator reads `runs/inbox/` and accepts a pack only when its
+  first line is an owner signature line whose format is fixed in an ADR (with how it is verified, since a file in the
+  container can be written by any process); (2) accepted packs move to `runs/inbox/accepted/` with a log line; others
+  are reported, never acted on; (3) tests for a signed, an unsigned and a tampered pack.
+- [ ] **BL-41 Public status file with an issue summary, for the coach.** S, low. Deps: none. Principles: P-06, R-05.
+  Source: FL-04 item 2, FL-05 (P1, P2). Review after resume-sg. Acceptance: (1) after every stage the coordinator
+  writes `status.json` (task, stage, attempt, outcome, PR link, open issues with their factory labels, cost) to a public
+  location the coach reads with git; (2) no private data: no email addresses, no tokens, no report text, checked by
+  secret-guard and a test; (3) no new credential for the coach.
+- [ ] **BL-42 Design gate before user-visible issues are split.** M, low. Deps: BL-12 (designer role) or the operator.
+  Principles: P-12, G-04. Source: FL-06 (P0). Review after resume-sg. Acceptance: (1) a planning checklist: every
+  user-visible flow has a flow diagram and desktop and phone designs approved by the owner before issues are drafted;
+  (2) every UI issue names the approved design file it implements; (3) a draft check refuses a UI issue without one.
+- [ ] **BL-43 Data model checked against light, medium and heavy samples.** S, low. Deps: none. Principles: P-12,
+  G-01. Source: FL-07 (P0). Review after resume-sg. Acceptance: (1) the planning template asks for three realistic
+  samples before the data model is fixed; (2) the heavy sample (several roles at one employer, projects, awards, open
+  source) becomes a fixture and an acceptance test in the first model issue.
+- [ ] **BL-44 Design spec template: an "information hierarchy" section.** S, low. Deps: BL-42. Principles: P-12.
+  Source: FL-08 (P1). Review after resume-sg. Acceptance: the template fixes size, weight and colour per level
+  (employer, role, project, bullet), and every design is rendered with the heavy sample of BL-43.
+- [ ] **BL-45 One living spec per product, with version and revision log.** S, low. Deps: none. Principles: P-03,
+  P-06. Source: FL-09 (P1). Review after resume-sg. Acceptance: (1) one spec file per product with a version line and a
+  revision log, attachments in the same folder; (2) issue drafts cite the spec version; (3) the operator refuses a
+  draft that cites an older version.
+- [ ] **BL-46 Product template ships `.gitleaks.toml`.** S, high. Deps: BL-34. Principles: P-05, R-16. Source: FL-10
+  (P1; the CI range is BL-33, CODEOWNERS is BL-34). Review after resume-sg. Acceptance: `templates/product/` contains
+  the default rules plus the allowlist for dotted lowercase identifiers with 3+ parts (as resume-sg#27); a fixture with
+  `disclaimer.5.body` after "API key" passes, a real-looking key still fails.
+- [ ] **BL-47 Every commit in a PR has a noreply author email; account check in setup.** S, high (CI). Deps: none.
+  Principles: R-05, R-07. Source: FL-11 (P1; merges are BL-29, the daily scan BL-30). Review after resume-sg.
+  Acceptance: (1) a CI step fails when a commit in the PR range has an author or committer email that is not a
+  `users.noreply.github.com` address, printing short SHAs only; (2) the H-01 checklist asks the owner to turn on email
+  privacy for both accounts; (3) a fixture test.
+- [ ] **BL-48 Runbook H-03 screenshots for Cloudflare Pages.** S, low (owner takes the screenshots). Deps: none.
+  Principles: G-04. Source: FL-12 (P2). Review after resume-sg. H-03 already says "Continue to Pages", preset None.
+  Acceptance: screenshots of the two choices in `docs/runbook-assets/`, linked from H-03.
+- [ ] **BL-49 `bin/coordinator status` and a cancel playbook.** S, low. Deps: none. Principles: P-06, G-02.
+  Source: FL-13 (P1). Review after resume-sg. Acceptance: (1) `status` prints the running task, stage and attempt, the
+  PID and since when, whether stopping now is safe (between stages, or a role session that the next run repeats), and
+  the exact resume command; read-only; (2) `docs/playbook/after-a-cancel.md`: read labels and the last events.jsonl
+  lines, never re-open an issue or PR, resume from the labels (the #4 recovery of 2026-11-26 as the example).
+- [ ] **BL-50 Stop every process left in a worktree after each role session and gate run.** S, low. Deps: BL-23.
+  Principles: P-05, G-01. From D3 (`docs/failures.md`, resume-sg#11, 2026-11-26 23:05 SGT). Review after resume-sg.
+  Playwright's web server runs in its own process session, so killing the role's process group is not enough.
+  Acceptance: (1) after every role session and every gate run the coordinator stops each process whose working
+  directory or command line is inside that task's worktree (TERM, then KILL after 5 s), and logs what it stopped;
+  (2) before the e2e gate it checks that the preview port is free and fails with a clear reason if not; (3) a test with
+  a fake process list and one real child process started with `setsid`.
+- [ ] **BL-51 Check an issue's paths against the role write rules when it is drafted.** S, low. Deps: none.
+  Principles: P-05, G-04. From D3 (resume-sg#42). Review after resume-sg. Acceptance: (1) a `bin/coordinator
+  check-issue <file>` reads the Paths section and the Grants line and reports every path the builder or QA cannot
+  write under path-guard (same rule table, no copy); (2) the operator runs it before opening an issue; (3) cases for
+  `index.html`, `public/x.svg`, a granted path and an ordinary `src/` path.
+- [ ] **BL-52 Turn budget for large issues, or split them.** S, low. Deps: none. Principles: P-07, P-12. From D3
+  (resume-sg#41: QA ended at 40 turns before writing tests). Review after resume-sg. Acceptance: (1) a size estimate
+  per issue (criteria count, reference size) in the draft check of BL-51; above a threshold the draft must be split or
+  carry a `Budget:` line that raises max turns for that task only, within a cap in `factory.yaml`; (2) the runner
+  applies it and records it in runs.csv; (3) tests.
+- [ ] **BL-53 Session opening routine for operator sessions.** S, low. Deps: none. Principles: P-03, P-06.
+  Source: FL-14 (P2). Review after resume-sg. Acceptance: the runbook's session start is: clear context, one
+  self-contained message, then "check GitHub (issues, PRs, labels) and runs/events.jsonl first; never redo work that is
+  already there".
+
 ## Needs live sessions or the human
 
 - [ ] **BL-11 First live task on resume-sg with the claude runner.** M, high. Deps: H-01, H-02, v1 tag, H-03. Principles: P-04, P-10.
@@ -229,7 +316,7 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   `coordinator/test/web-tools.test.ts`, and (2) give Codex a read-only copy of the task (a fresh
   `git worktree` or archive export owned by another user, or mounted read-only), never the live
   worktree, since its sandbox will not enforce read-only here.
-- [ ] **BL-14 Telegram command bot (R-06, spec 3.9 bot B).** L, high. Deps: BL-11. Principles: P-11, G-02, G-07.
+- [ ] **BL-14 Telegram command bot (R-06, spec 3.9 bot B).** L, high. Source: FL-04 item 3, partly (review after resume-sg). Deps: BL-11. Principles: P-11, G-02, G-07.
   Acceptance: separate service under `bot/`, reads exactly `TELEGRAM_BOT_TOKEN`,
   `TELEGRAM_ALLOWED_USER_ID`, `GH_TOKEN` (R-05, test); handles private chats only; acts only when
   `from.id == TELEGRAM_ALLOWED_USER_ID`; everything else is dropped silently and logged (no reply);
@@ -249,7 +336,7 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   plan limit; tests with fake clocks.
 - [ ] **BL-18 Daily digest and screenshot push (spec 3.5).** S, low. Deps: BL-14.
 - [ ] **BL-19 `factory new-product` with repo creation, labels and CODEOWNERS (spec 3.8).** M, high. Deps: H-04 stays human; this only automates content. Principles: G-04.
-- [ ] **BL-20 Gradual loosening of risk levels (spec 3.5 item 7).** M, high. Deps: 4 weeks of data. Principles: P-11.
+- [ ] **BL-20 Gradual loosening of risk levels (spec 3.5 item 7).** M, high. Source: FL-01, partly; see BL-38 (review after resume-sg). Deps: 4 weeks of data. Principles: P-11.
   Acceptance: an ADR per loosened class; automatic tightening on the first failure.
 - [ ] **BL-21 Verify the required status check names after the first CI run.** S, high (human). Deps: H-02.
   Acceptance: `CHECKS` in `scripts/setup-repo.sh` matches the names GitHub shows.
