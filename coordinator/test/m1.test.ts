@@ -200,3 +200,65 @@ describe("the queue waits for an auto-merge to land before the next task (resume
     expect(await new GhGitHub(out("CLOSED", "")).pullRequestState("o", "r", 1)).toEqual({ state: "closed", mergeState: "" });
   });
 });
+
+describe("restart a revised task from the tests stage (resume-sg#8, owner 15:25 SGT)", () => {
+  async function deps(r: Awaited<ReturnType<typeof dryRun>>) {
+    const { loadFactoryConfig } = await import("../src/config.ts");
+    const { EventLog } = await import("../src/events.ts");
+    const { RunsCsvWriter } = await import("../src/runs-csv.ts");
+    const { StubRunner } = await import("../src/runner/stub.ts");
+    const { StubGates } = await import("../src/gates/stub.ts");
+    const { exec } = await import("../src/exec.ts");
+    const { join } = await import("node:path");
+    const cfg = loadFactoryConfig(join(r.repoDir, ".factory", "factory.yaml"));
+    return { cfg, gh: r.gh, runner: new StubRunner({}), gates: new StubGates({}), workspace: new GitWorkspace(exec, { repoDir: r.repoDir, worktreesDir: r.paths.worktreesDir, baseBranch: "main", remote: "origin" }), exec, ledger: new RunsCsvWriter(r.paths.runsCsv), events: new EventLog(r.paths.events), paths: r.paths, now: () => new Date() };
+  }
+  it("a task stopped at impl restarts at tests attempt 1 on a fresh worktree; the coordinator moves the label", async () => {
+    const { existsSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { spawnSync } = await import("node:child_process");
+    const r = await dryRun((f) => {
+      f.issues = [{ number: 501, title: "Fact-check", labels: ["factory:blocked", "risk:high"], body: "Feature: x" }];
+      f.scenarios = {};
+    });
+    const issue = r.gh.issues.get("humyna-labs/resume-sg#501");
+    if (!issue) throw new Error("fixture");
+    const d = await deps(r);
+    // simulate the held task: worktree with an old QA commit, label factory:impl
+    const { worktree } = await d.workspace.prepare(issue);
+    writeFileSync(join(worktree, "old-v4-test.txt"), "v4\n");
+    spawnSync("git", ["add", "-A"], { cwd: worktree });
+    spawnSync("git", ["-c", "user.name=x", "-c", "user.email=x@localhost", "commit", "-q", "-m", "old tests"], { cwd: worktree });
+    issue.labels = ["factory:impl", "factory:blocked", "risk:high"];
+    const { restartTask, runTask } = await import("../src/coordinator.ts");
+    const restarted = await restartTask(d, issue, "issue revised to brief v5.2");
+    expect(existsSync(worktree)).toBe(false);
+    expect(issue.labels).toContain("factory:ready");
+    expect(issue.labels).not.toContain("factory:impl");
+    expect(issue.labels).toContain("factory:blocked");
+    expect(restarted.labels).toContain("factory:ready");
+    const ev = readEvents(r.paths.events).filter((e) => e.task === "resume-sg#501");
+    expect(ev.find((e) => e.type === "task-restart")).toMatchObject({ from: "impl", reason: "issue revised to brief v5.2" });
+    const res = await runTask(d, restarted);
+    expect(res.final).toBe("needs-human");
+    const after = readEvents(r.paths.events).filter((e) => e.task === "resume-sg#501");
+    const restartAt = after.findIndex((e) => e.type === "task-restart");
+    expect(after.slice(restartAt).find((e) => e.type === "stage-start")).toMatchObject({ stage: "tests", attempt: 1 });
+    const files = spawnSync("git", ["ls-tree", "-r", "--name-only", "factory/resume-sg-501"], { cwd: r.repoDir, encoding: "utf8" }).stdout;
+    expect(files).not.toContain("old-v4-test.txt");
+  });
+  it("refuses a closed issue and a task that already has a PR", async () => {
+    const r = await dryRun((f) => {
+      f.issues = [{ number: 502, title: "Low", labels: ["factory:ready", "risk:low"], body: "x" }];
+      f.scenarios = {};
+    });
+    const d = await deps(r);
+    const { restartTask } = await import("../src/coordinator.ts");
+    const issue = r.gh.issues.get("humyna-labs/resume-sg#502");
+    if (!issue) throw new Error("fixture");
+    await expect(restartTask(d, { ...issue, state: "closed" }, "x")).rejects.toThrow(/closed/);
+    for (const l of ["factory:pr", "factory:needs-human", "factory:auto-merge"]) {
+      await expect(restartTask(d, { ...issue, state: "open", labels: [l] }, "x")).rejects.toThrow(/a PR exists/);
+    }
+  });
+});

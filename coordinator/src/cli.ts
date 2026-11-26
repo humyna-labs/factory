@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { factoryConfigJsonSchema, loadFactoryConfig } from "./config.ts";
-import { runTask, type Deps } from "./coordinator.ts";
+import { restartTask, runTask, type Deps } from "./coordinator.ts";
 import { DRY_RUN_FIXTURE, loadFixture, runFixture } from "./dryrun.ts";
 import { EventLog } from "./events.ts";
 import { exec } from "./exec.ts";
@@ -21,12 +21,13 @@ import { formatDigest, runQueue, writeDigest } from "./queue.ts";
 import { RunsCsvWriter, validateRunsCsv } from "./runs-csv.ts";
 import { ClaudeRunner } from "./runner/claude.ts";
 import { loadRoleConfig } from "./runner/roles.ts";
+import { taskId } from "./types.ts";
 import { GitWorkspace } from "./workspace/git.ts";
 
 const USAGE = `usage:
   coordinator [run] --dry-run [--resume] [--max-hours N] [--runs-dir DIR] [--verbose]
   coordinator run --queue --max-hours N --repo-dir DIR [--runs-dir DIR]
-  coordinator run --task <repo>#<n> --repo-dir DIR [--runs-dir DIR]
+  coordinator run --task <repo>#<n> --repo-dir DIR [--runs-dir DIR] [--restart "<reason>"]
   coordinator validate-runs <runs.csv>
   coordinator new-product <name> --out DIR [--code-owner HANDLE]
   coordinator schema`;
@@ -37,6 +38,7 @@ async function main(argv: string[]): Promise<number> {
     allowPositionals: true,
     options: {
       "dry-run": { type: "boolean", default: false },
+      restart: { type: "string" },
       resume: { type: "boolean", default: false },
       queue: { type: "boolean", default: false },
       "max-hours": { type: "string" },
@@ -118,7 +120,13 @@ async function main(argv: string[]): Promise<number> {
   const m = /^([a-z0-9._-]+)#(\d+)$/.exec(values.task);
   if (!m || m[1] !== cfg.repo.split("/")[1]) throw new Error(`--task must be ${cfg.repo.split("/")[1]}#<n>`);
   const [owner, repo] = cfg.repo.split("/") as [string, string];
-  const r = await runTask(deps, await gh.getIssue(owner, repo, Number(m[2])));
+  let issue = await gh.getIssue(owner, repo, Number(m[2]));
+  if (values.restart !== undefined) {
+    if (!values.restart.trim()) throw new Error("--restart needs a reason, for example --restart \"issue revised to brief v5.2\"");
+    issue = await restartTask(deps, issue, values.restart);
+    console.log(`${taskId(issue)}: restarted from the tests stage (${values.restart})`);
+  }
+  const r = await runTask(deps, issue);
   console.log(`${r.task}: ${r.final}${r.prUrl ? ` ${r.prUrl}` : ""}`);
   return 0;
 }

@@ -121,6 +121,23 @@ function rebuild(c: TaskCtx): void {
   }
 }
 
+/**
+ * Restart a task from the tests stage after its issue was revised (jd2cv-m1, owner 15:25 SGT: resume-sg#8 was
+ * revised to brief v5.2 after QA had written tests for v4). The coordinator, not a human, moves the label (R-02):
+ * it records a task-restart event, removes the task worktree (the next run starts from the fetched base and the
+ * branch is reset there), and sets factory:ready. Refuses an open PR's task (re-run it instead) and a closed issue.
+ */
+export async function restartTask(d: Deps, issue: Issue, reason: string): Promise<Issue> {
+  if (issue.state !== "open") throw new Error(`${taskId(issue)} is closed; nothing to restart`);
+  const from = STATES.find((s) => issue.labels.includes(stateLabel(s)));
+  if (from === "pr" || from === "needs-human" || from === "auto-merge") throw new Error(`${taskId(issue)} is at ${from}; a PR exists, re-run it instead of restarting`);
+  d.events.write({ ts: isoUtc(d.now()), type: "task-restart", task: taskId(issue), from: from ?? "none", reason: reason.replace(/[^\x20-\x7E]/g, "?").slice(0, 200) });
+  const wt = d.workspace.worktreeFor(issue);
+  await d.workspace.cleanup(wt);
+  await setState(d, issue, "ready");
+  return { ...issue, labels: [...issue.labels.filter((l) => !l.startsWith("factory:") || l === "factory:blocked"), stateLabel("ready")] };
+}
+
 export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
   const id = taskId(issue);
   const res: TaskResult = { task: id, final: "ready", stoppedForTime: false, turns: 0, costUsd: 0, blockedActions: 0 };
