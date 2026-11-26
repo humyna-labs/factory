@@ -198,18 +198,22 @@ Template:
 - Issue: https://github.com/humyna-labs/resume-sg/issues/36, https://github.com/humyna-labs/resume-sg/issues/38
   PR: https://github.com/humyna-labs/resume-sg/pull/37
 
-## 2026-11-26 Second wrong QA test with no rewrite left (#38, #11)
+## 2026-11-26 Second wrong QA test with no rewrite left (#38, #11, #42)
 - Symptom: #38 fact-check-3 escalated at 20:05 SGT (768 of 769 tests passed), #11 page-fit at 22:30 SGT (code
   done). In both, the first wrong test went back to QA and was fixed; a second, different wrong test then had no
   QA re-run left (`MAX_TEST_REWRITES = 1`). #38: a test expected a Chinese item to be "not found", but its own
   fixture contained it inside a longer item. #11: an e2e test expected bullets to move for a long sample resume
   that already fits its 2-page target.
+  #42 ui-polish (23:50 SGT) is the third case: QA fixed two older tests that contradict the issue, then
+  `tests/e2e/design-system.spec.ts:67` still expected the zh header sub-label the issue removes.
 - Root cause: QA writes tests without running them against any implementation, and one rewrite per task is too
-  few for large issues; the e2e case was written for a layout QA never measured.
+  few for large issues; the e2e case was written for a layout QA never measured; in #42 older tests asserted
+  behaviour the new issue changes, and the builder finds them one stage at a time.
 - Principle: P-02, G-01.
 - Fix: per owner, a test note in the issue and a restart (#38: 20:22, passed, PR #39 merged; #11: 22:45 with the
   reason "e2e sample resume too short"). Two QA rewrites is BL-36 and stays for the factory review (owner 22:45).
 - Issue: https://github.com/humyna-labs/resume-sg/issues/38, https://github.com/humyna-labs/resume-sg/issues/11,
+  https://github.com/humyna-labs/resume-sg/issues/42,
   harness-fix https://github.com/humyna-labs/factory/issues/11, https://github.com/humyna-labs/factory/issues/13
   PR: https://github.com/humyna-labs/resume-sg/pull/39
 
