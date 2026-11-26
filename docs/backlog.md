@@ -139,6 +139,26 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   (spec 3.1 item 7: multi-agent runs cost about 15 times more), recorded before the ADR is accepted; (5) tests:
   a team member's write attempt is blocked by the path guard, a team over budget is stopped, and a team is
   refused for an implementation task.
+- [ ] **BL-29 Coordinator merges set a noreply author email.** S, high. Deps: none. Principles: R-02, R-05, R-07.
+  Owner, 2026-11-26 12:30 SGT: the squash merges of resume-sg #16 and #17 recorded the machine account's private
+  email as the author. Acceptance: (1) `GhGitHub.merge` passes `--author-email` with the bot's noreply address
+  (`<id>+humyna-bot@users.noreply.github.com`, from configuration, not hard-coded in two places); (2) a unit test
+  over the assembled `gh pr merge` arguments; (3) a check after the first merge reads the merge commit's author
+  email and stops the queue if it is not a noreply address. Never rewrite the history of any repository; the two
+  recorded merges stay as they are.
+- [ ] **BL-30 Daily scan of public repositories for non-noreply author or committer emails.** S, low. Deps: BL-18.
+  Principles: P-02, R-05. Owner, 2026-11-26. Acceptance: (1) a read-only script lists, per public humyna-labs
+  repository, commits whose author or committer email is not a `users.noreply.github.com` address (or GitHub's
+  own `noreply@github.com` for web merges); (2) it prints counts and short SHAs only, never the addresses; (3) it
+  runs daily and reports in the digest; (4) it never changes history; remediation stays a human decision.
+- [ ] **BL-31 Refresh open factory PRs when the base moves.** M, high. Deps: none. Principles: P-01, P-02.
+  Found in jd2cv-m1: every UI issue adds keys to the same two i18n dictionaries, so open PRs (high-risk ones wait
+  for the owner) go DIRTY when another PR merges; the queue's merge wait (v1.3) covers only low-risk auto-merges.
+  Acceptance: (1) the coordinator detects an open factory PR whose `mergeStateStatus` is DIRTY or BEHIND; (2) it
+  merges `origin/main` into the branch in the worktree; a clean merge re-runs verify (and review when the diff
+  changed) and pushes; (3) a conflict sends the task back to impl with the conflicting paths as the previous
+  failure, so the builder resolves it in `src/` (QA in `tests/`); (4) never force-pushes over a human's commits;
+  (5) dry-run tests with a fake remote for clean, conflicting and behind cases.
 
 ## Needs live sessions or the human
 
