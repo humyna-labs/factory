@@ -151,7 +151,8 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   repository, commits whose author or committer email is not a `users.noreply.github.com` address (or GitHub's
   own `noreply@github.com` for web merges); (2) it prints counts and short SHAs only, never the addresses; (3) it
   runs daily and reports in the digest; (4) it never changes history; remediation stays a human decision.
-- [ ] **BL-31 When a PR merges, check every other open factory PR and bring it up to date.** M, high. Deps: none.
+- [ ] **BL-31 When a PR merges, check every other open factory PR and bring it up to date.** M, high. URGENT (owner,
+  2026-11-26 14:45 SGT: the owner had to press Update branch by hand on #18 and #26). Deps: none.
   Principles: P-01, P-02. Owner, 2026-11-26 13:35 SGT; found in jd2cv-m1: resume-sg PR #18 (base-resume) went DIRTY
   when the design-system PR #22 merged, so its auto-merge could never happen; every UI issue adds keys to the same two
   i18n dictionaries, so this recurs. The queue merge wait (v1.3) only orders low-risk auto-merges. Acceptance:
@@ -173,6 +174,23 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   `git ls-remote` for that ref (pick one, with an ADR note on cost); (3) tests: a forged `refs/remotes/origin/x`
   pointing at an agent commit no longer hides it; a fetched main with GitHub-made merges still passes;
   (4) GitHub's ruleset stays the hard control for `main` (R-07).
+- [ ] **BL-33 gates.yml: gitleaks scans the PR's own range plus main, not every branch.** S, high (CI, the owner
+  installs). Deps: none. Principles: P-02, R-18. Owner, 2026-11-26 14:45 SGT: the "gitleaks (full history)" step scans
+  `--all` branches, so a false positive on one branch (generic-api-key on the i18n key `disclaimer.5.body` after
+  "Your API key.", resume-sg PR #26) failed every open PR (#18 too). Acceptance: (1) the step scans
+  `origin/main..HEAD` of the PR plus the history of `main` (`--log-opts`), nothing from other branches; (2) a fixture
+  repo with a finding on an unrelated branch passes, a finding in the PR range fails, a finding on main fails;
+  (3) step and job names unchanged (required checks); (4) installed through `install-workflows.sh` and the `v1` tag.
+- [ ] **BL-34 `.gitleaks.toml` and `.gitleaksignore` are high-risk paths.** S, high. Deps: none. Principles: R-03,
+  P-11. Owner, 2026-11-26: add `/.gitleaks.toml` and `/.gitleaksignore` to `high_risk_paths` in the product template's
+  `.factory/factory.yaml` and to its `CODEOWNERS`, and to resume-sg through a reviewed PR; path-guard R3 refuses both
+  for every role. Acceptance: a structure test keeps factory.yaml and CODEOWNERS in sync for these paths; a guard case
+  per role; `assessRisk` marks a PR touching either as high.
+- [ ] **BL-35 secret-guard flags new gitleaks allow comments and allowlist changes for the owner.** S, high. Deps:
+  BL-34. Principles: P-05, R-16. Owner, 2026-11-26. Acceptance: (1) a new rule (S9) in `hooks/secret-guard.sh` reports
+  any added `gitleaks:allow` comment and any change to `[allowlist]`/`[[allowlists]]` or a `.gitleaksignore` line, in
+  hook mode and `--scan-git`; (2) the coordinator turns such a finding into risk:high with the reason "secret-scan
+  allowlist change" (the PR waits for the owner) instead of failing verify; (3) cases and a mutation check.
 
 ## Needs live sessions or the human
 
