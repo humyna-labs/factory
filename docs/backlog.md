@@ -164,6 +164,15 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   factory branch; (5) a high-risk PR still needs the owner's approval after the update (record whether the ruleset
   dismisses stale approvals); (6) dry-run tests with a fake remote for clean, behind and conflicting cases, and one
   live check on the next conflict.
+- [ ] **BL-32 pre-push: trust only remote-tracking refs refreshed just before the push.** S, high. Deps: none.
+  Principles: R-07, P-02. Owner, 2026-11-26 14:10 SGT, on `da0bbf0`: the hook's range (`--not --remotes`, for new
+  branches and now for updates) trusts every local remote-tracking ref, and an agent can write `refs/remotes/...`
+  locally to hide its commits from the checks. Acceptance: (1) the coordinator fetches `origin` right before every push
+  and the hook limits `--not` to `refs/remotes/origin/*` (not `--remotes`, not other remotes); (2) the hook refuses when
+  a remote-tracking ref it relies on is newer than the last fetch the coordinator recorded, or differs from
+  `git ls-remote` for that ref (pick one, with an ADR note on cost); (3) tests: a forged `refs/remotes/origin/x`
+  pointing at an agent commit no longer hides it; a fetched main with GitHub-made merges still passes;
+  (4) GitHub's ruleset stays the hard control for `main` (R-07).
 
 ## Needs live sessions or the human
 
