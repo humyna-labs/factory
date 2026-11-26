@@ -191,7 +191,11 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   any added `gitleaks:allow` comment and any change to `[allowlist]`/`[[allowlists]]` or a `.gitleaksignore` line, in
   hook mode and `--scan-git`; (2) the coordinator turns such a finding into risk:high with the reason "secret-scan
   allowlist change" (the PR waits for the owner) instead of failing verify; (3) cases and a mutation check.
-- [ ] **BL-36 QA test defects: let QA test against the builder's attempt, and allow two rewrites.** M, high. Source: FL-19 (review after resume-sg). Deps:
+- [ ] **BL-36 QA test defects: let QA test against the builder's attempt, and allow two rewrites.** M, high. Source: FL-19 (review after resume-sg).
+  Owner, 2026-11-27 07:50 SGT: proposal (2) approved and built in b3a59f5 (`MAX_TEST_REWRITES` 2); proposal (1)
+  (BL-36a, the builder's `src/` diff for QA) stays rejected; proposal (3) stays open. From the same decision, every
+  issue the operator opens or restarts carries an "Existing tests affected:" line naming current tests that assert
+  behaviour the issue changes (automation: BL-54). Deps:
   none. Principles: P-02, P-06, P-08. Not adopted on 2026-11-26 16:12 SGT; the owner keeps it for the factory review
   after resume-sg. Evidence (jd2cv-m1): resume-sg #4, #25 and #13 escalated on defective QA tests (non-unique
   queries, `innerText` under `text-transform: uppercase`, an assertion the spec contradicts); one QA rewrite was not
