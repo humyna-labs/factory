@@ -39,6 +39,20 @@ allow() { # <rule>
   exit 0
 }
 
+# Issue-scoped grants (jd2cv-m1, owner decision 2026-11-26). The coordinator sets FACTORY_GRANTS
+# (comma-separated) only for a builder session of a risk:high issue opened by humyna-bot or
+# humyna whose "Grants:" line it accepted. This script trusts nothing else: only these three
+# exact entries mean anything, for the builder only, and never for harness paths (R3 runs first).
+granted() { # <rel>
+  _g=",${FACTORY_GRANTS:-},"
+  case "$1" in
+    public/_headers) case "$_g" in *",public/_headers,"*) return 0 ;; esac ;;
+    src/security/*) case "$_g" in *",src/security/**,"*) return 0 ;; esac ;;
+    src/templates/*) case "$_g" in *",src/templates/**,"*) return 0 ;; esac ;;
+  esac
+  return 1
+}
+
 # ---------------------------------------------------------------- paths
 check_path() { # <root> <path>
   root=$(realpath -m -- "$1")
@@ -102,6 +116,9 @@ check_path() { # <root> <path>
       deny R5 "$rel" "QA writes only tests/ and evals/. If src/ needs a change, describe it in your report."
       ;;
     builder)
+      # RULE G1 begin  (a granted protected path, see granted() above)
+      if granted "$rel"; then allow G1; fi
+      # RULE G1 end
       # RULE R6 begin  (contracts, templates and security code are not the builder's)
       case "$rel" in
         src/contracts/* | src/templates/* | src/security/*)

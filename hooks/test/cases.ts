@@ -36,10 +36,15 @@ export interface GuardCase {
   tool?: "Write" | "Edit" | "MultiEdit" | "NotebookEdit" | "Bash";
   expect: "allow" | "deny";
   rule: string;
+  /** Extra environment for this case (FACTORY_GRANTS, jd2cv-m1). */
+  env?: Record<string, string>;
 }
 
 const p = (role: string, target: string, expect: "allow" | "deny", rule: string, name = `${role} ${expect} ${target}`): GuardCase => ({ name, role, kind: "path", target, expect, rule });
 const b = (role: string, command: string, expect: "allow" | "deny", rule: string): GuardCase => ({ name: `${role} bash ${expect}: ${command}`, role, kind: "tool", tool: "Bash", target: command, expect, rule });
+
+const GRANTS = "public/_headers,src/security/**,src/templates/**";
+const g = (role: string, target: string, expect: "allow" | "deny", rule: string, grants = GRANTS): GuardCase => ({ ...p(role, target, expect, rule, `${role} ${expect} ${target} with grants ${grants}`), env: { FACTORY_GRANTS: grants } });
 
 export const PATH_GUARD_CASES: GuardCase[] = [
   // A3: builder blocked from tests/ and feature_list.json
@@ -120,6 +125,28 @@ export const PATH_GUARD_CASES: GuardCase[] = [
   b("builder", "ls -ln src", "allow", "B0"),
   b("builder", "node -e \"require('fs').unlinkSync('src/x')\"", "allow", "B0"),
   b("builder", "echo login && pnpm lint", "allow", "B0"),
+  // jd2cv-m1 grants: the three grantable paths, for the builder only, never harness paths
+  g("builder", "public/_headers", "allow", "G1"),
+  g("builder", "src/security/keyStore.ts", "allow", "G1"),
+  g("builder", "src/templates/classic/Classic.tsx", "allow", "G1"),
+  g("builder", "src/security/keyStore.ts", "deny", "R6", "public/_headers"),
+  g("builder", "public/_headers", "deny", "R7", "src/security/**"),
+  g("builder", "src/templates/a.css", "deny", "R6", "src/templates/*"),
+  g("builder", "src/templates/a.css", "deny", "R6", "src/**"),
+  g("builder", "public/_redirects", "deny", "R7", "public/**"),
+  g("builder", "public/_headers", "deny", "R7", " public/_headers"),
+  g("builder", "src/contracts/api.ts", "deny", "R6"),
+  g("builder", "package.json", "deny", "R7", "public/_headers,package.json"),
+  g("builder", ".github/workflows/ci.yml", "deny", "R3", ".github/**,public/_headers"),
+  g("builder", "src/security/.claude/settings.json", "deny", "R3"),
+  g("builder", "tests/unit/a.test.ts", "deny", "R7"),
+  g("builder", "feature_list.json", "deny", "R4"),
+  g("builder", "src/security/../../.factory/factory.yaml", "deny", "R3"),
+  g("builder", "public/_headers/../../x", "deny", "R7"),
+  g("qa", "public/_headers", "deny", "R5"),
+  g("qa", "src/security/keyStore.ts", "deny", "R5"),
+  g("reviewer", "src/templates/a.css", "deny", "R8"),
+  g("compliance", "public/_headers", "deny", "R8"),
 ];
 
 export interface Outcome {
@@ -129,7 +156,7 @@ export interface Outcome {
 }
 
 export function runPathGuard(script: string, c: GuardCase, env: Record<string, string> = {}): Outcome {
-  const baseEnv = { PATH: process.env.PATH ?? "/usr/bin:/bin", FACTORY_REPORTS_DIR: REPORTS, FACTORY_GUARD_LOG: env.FACTORY_GUARD_LOG ?? "/tmp/factory-guard-test.log", ...env };
+  const baseEnv = { PATH: process.env.PATH ?? "/usr/bin:/bin", FACTORY_REPORTS_DIR: REPORTS, FACTORY_GUARD_LOG: env.FACTORY_GUARD_LOG ?? "/tmp/factory-guard-test.log", ...c.env, ...env };
   const r =
     c.kind === "path"
       ? spawnSync("bash", [script, c.role, "--check", WT, c.target], { encoding: "utf8", env: baseEnv })

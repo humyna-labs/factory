@@ -26,9 +26,9 @@ describe("mutation check: path-guard.sh", () => {
   const src = readFileSync(join(HOOKS, "path-guard.sh"), "utf8");
   const ids = ruleIds(src);
   it("has the expected rules", () => {
-    expect(ids).toEqual(["R10", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "B1", "B2", "B7", "B3", "B4", "B5", "B6"]);
+    expect(ids).toEqual(["R10", "R1", "R2", "R3", "R4", "R5", "G1", "R6", "R7", "R8", "R9", "B1", "B2", "B7", "B3", "B4", "B5", "B6"]);
   });
-  it.each(ids)("disabling %s makes at least one case fail", (id) => {
+  it.each(ids)("disabling %s makes at least one case fail", { timeout: 30_000 }, (id) => {
     const file = join(scratch, `path-guard-${id}.sh`);
     writeFileSync(file, disable(src, id));
     let decisionFlips = 0;
@@ -63,6 +63,6 @@ describe("mutation check: secret-guard.sh", () => {
   });
   it("prints the mutation log", () => {
     console.log(["Mutation log (R-16):", ...log].join("\n"));
-    expect(log.length).toBe(17 + 8);
+    expect(log.length).toBe(18 + 8);
   });
 });
