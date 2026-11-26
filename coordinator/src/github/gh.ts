@@ -14,6 +14,7 @@ interface GhIssue {
   body: string;
   state: string;
   labels: GhLabel[];
+  author?: { login?: string } | null;
 }
 
 export class GhGitHub implements GitHubAdapter {
@@ -31,16 +32,16 @@ export class GhGitHub implements GitHubAdapter {
   }
 
   private toIssue(owner: string, repo: string, g: GhIssue): Issue {
-    return { owner, repo, number: g.number, title: g.title, body: g.body, labels: g.labels.map((l) => l.name), state: g.state.toLowerCase() === "open" ? "open" : "closed" };
+    return { owner, repo, number: g.number, title: g.title, body: g.body, labels: g.labels.map((l) => l.name), state: g.state.toLowerCase() === "open" ? "open" : "closed", ...(g.author?.login ? { author: g.author.login } : {}) };
   }
 
   async listOpenIssues(owner: string, repo: string, label: string): Promise<Issue[]> {
-    const out = await this.gh(["issue", "list", "-R", `${owner}/${repo}`, "--state", "open", "--label", label, "--limit", "100", "--json", "number,title,body,state,labels"]);
+    const out = await this.gh(["issue", "list", "-R", `${owner}/${repo}`, "--state", "open", "--label", label, "--limit", "100", "--json", "number,title,body,state,labels,author"]);
     return (JSON.parse(out) as GhIssue[]).map((g) => this.toIssue(owner, repo, g));
   }
 
   async getIssue(owner: string, repo: string, number: number): Promise<Issue> {
-    const out = await this.gh(["issue", "view", String(number), "-R", `${owner}/${repo}`, "--json", "number,title,body,state,labels"]);
+    const out = await this.gh(["issue", "view", String(number), "-R", `${owner}/${repo}`, "--json", "number,title,body,state,labels,author"]);
     return this.toIssue(owner, repo, JSON.parse(out) as GhIssue);
   }
 

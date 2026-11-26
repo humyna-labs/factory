@@ -24,6 +24,8 @@ export interface RoleSession {
   tracePath: string;
   previousFailure?: string;
   timeoutMs: number;
+  /** Protected paths this issue grants (jd2cv-m1). Builder writes; the reviewer checks them. */
+  grants?: readonly string[];
 }
 
 export interface RoleResult {

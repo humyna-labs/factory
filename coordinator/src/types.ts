@@ -22,6 +22,8 @@ export interface Issue {
   body: string;
   labels: string[];
   state: "open" | "closed";
+  /** Login of the account that opened the issue (grants, jd2cv-m1). */
+  author?: string;
 }
 
 export function taskId(issue: Pick<Issue, "repo" | "number">): string {

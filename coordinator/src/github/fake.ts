@@ -88,7 +88,10 @@ export class FakeGitHub implements GitHubAdapter {
     return { number, url: `https://github.com/${owner}/${repo}/issues/${number}` };
   }
 
-  async findOrOpenPullRequest(owner: string, repo: string, head: string, _base: string, _title: string, _body: string): Promise<PullRequest> {
+  /** Body of each pull request when it was opened, by head branch (tests only, not persisted). */
+  readonly prBodies = new Map<string, string>();
+
+  async findOrOpenPullRequest(owner: string, repo: string, head: string, _base: string, _title: string, body: string): Promise<PullRequest> {
     this.record("findOrOpenPullRequest", owner, repo, head);
     const k = `${owner}/${repo}:${head}`;
     const existing = this.pulls.get(k);
@@ -96,6 +99,7 @@ export class FakeGitHub implements GitHubAdapter {
     const number = this.nextNumber++;
     const pr: PullRequest = { number, url: `https://github.com/${owner}/${repo}/pull/${number}`, head, merged: false, autoMerge: false, labels: [] };
     this.pulls.set(k, pr);
+    this.prBodies.set(head, body);
     this.persist();
     return pr;
   }

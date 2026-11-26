@@ -3,6 +3,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Exec } from "../exec.ts";
+import { factoryPath } from "../paths.ts";
 import { sessionPrompt } from "./roles.ts";
 import type { RoleConfig, RoleResult, RoleRunner, RoleSession } from "./types.ts";
 
@@ -34,7 +35,9 @@ export function buildClaudeInvocation(s: RoleSession, rc: RoleConfig, o: Pick<Cl
     "--append-system-prompt-file",
     rc.promptFile,
     "--settings",
-    rc.settings,
+    // A granted builder session uses the settings without the Edit denies of the granted dirs;
+    // path-guard G1 then allows exactly the granted entries (jd2cv-m1).
+    s.role === "builder" && s.grants?.length ? factoryPath("settings", "builder-grants.json") : rc.settings,
     "--model",
     rc.model,
     "--max-turns",
@@ -56,7 +59,7 @@ export function buildClaudeInvocation(s: RoleSession, rc: RoleConfig, o: Pick<Cl
     input: sessionPrompt(s, o.baseBranch),
     // Hooks inherit this env: path-guard (reports dir, guard log), stop-report (this session's
     // report, W2-08) and session-start (escalations dir).
-    env: { FACTORY_REPORTS_DIR: o.reportsDir, FACTORY_GUARD_LOG: o.guardLog, FACTORY_REPORT_PATH: s.reportPath, ...(o.escalationsDir ? { FACTORY_ESCALATIONS_DIR: o.escalationsDir } : {}) },
+    env: { ...(s.role === "builder" && s.grants?.length ? { FACTORY_GRANTS: s.grants.join(",") } : {}), FACTORY_REPORTS_DIR: o.reportsDir, FACTORY_GUARD_LOG: o.guardLog, FACTORY_REPORT_PATH: s.reportPath, ...(o.escalationsDir ? { FACTORY_ESCALATIONS_DIR: o.escalationsDir } : {}) },
   };
 }
 

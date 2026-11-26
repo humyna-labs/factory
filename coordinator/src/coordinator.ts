@@ -13,6 +13,7 @@ import { writeEscalationDraft, harnessFixIssue, harnessFixLine, type AttemptReco
 import { readEvents, type EventLog, type FactoryEvent } from "./events.ts";
 import type { Exec } from "./exec.ts";
 import { featureOf, markFeature } from "./features.ts";
+import { decideGrants, grantedChanges, type Grant } from "./grants.ts";
 import type { GateRunner } from "./gates/types.ts";
 import type { GitHubAdapter } from "./github/types.ts";
 import { mergeLowRisk } from "./merge.ts";
@@ -92,6 +93,8 @@ interface TaskCtx {
   risk: Risk;
   /** Events of this task since its last task-start. */
   past: FactoryEvent[];
+  /** Protected paths the issue grants to the builder (jd2cv-m1). */
+  grants: Grant[];
 }
 
 function taskEvents(d: Deps, id: string): FactoryEvent[] {
@@ -119,7 +122,10 @@ function rebuild(c: TaskCtx): void {
 export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
   const id = taskId(issue);
   const res: TaskResult = { task: id, final: "ready", stoppedForTime: false, turns: 0, costUsd: 0, blockedActions: 0 };
-  const c: TaskCtx = { issue, id, max: d.cfg.max_impl_attempts, implAttempts: 0, testRuns: 0, testDefect: false, history: [], reports: [], previousFailure: undefined, lastHarnessFix: undefined, risk: "high", past: [] };
+  const c: TaskCtx = { issue, id, max: d.cfg.max_impl_attempts, implAttempts: 0, testRuns: 0, testDefect: false, history: [], reports: [], previousFailure: undefined, lastHarnessFix: undefined, risk: "high", past: [], grants: [] };
+  const gd = decideGrants(issue);
+  c.grants = gd.grants;
+  if (gd.grants.length || gd.refused) d.events.write({ ts: isoUtc(d.now()), type: "grants", task: id, granted: gd.grants.join(","), ...(gd.refused ? { refused: gd.refused } : {}) });
   const resumeAt = labelledStage(issue);
   const { worktree, branch } = await d.workspace.prepare(issue);
   let state: State;
@@ -165,7 +171,7 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
     const start = d.now();
     const rp = STAGE_ROLE[stage] === "coordinator" ? undefined : reportPath(d.paths.reportsDir, issue.repo, issue.number, stage, attempt, start);
     d.events.write({ ts: isoUtc(start), type: "stage-start", task: id, stage, attempt, ...(rp ? { report: rp } : {}) });
-    const out = await runStage(d, issue, stage, attempt, { worktree, branch, previousFailure: c.previousFailure, reports: c.reports, reportPath: rp });
+    const out = await runStage(d, issue, stage, attempt, { worktree, branch, previousFailure: c.previousFailure, reports: c.reports, reportPath: rp, grants: c.grants });
     const end = d.now();
     if (stage === "impl") c.implAttempts++;
     if (stage === "tests") c.testRuns++;
@@ -244,6 +250,7 @@ interface StageCtx {
   previousFailure: string | undefined;
   reports: string[];
   reportPath: string | undefined;
+  grants: Grant[];
 }
 
 const ZERO = { turns: 0, costUsd: 0, blockedActions: 0 };
@@ -266,6 +273,7 @@ async function runRole(d: Deps, issue: Issue, role: Role, stage: Stage, attempt:
     tracePath: `${d.paths.tracesDir}/${issue.repo}-${issue.number}/${stage}-${attempt}.jsonl`,
     timeoutMs: d.cfg.session_timeout_minutes * 60_000,
     ...(c.previousFailure ? { previousFailure: c.previousFailure } : {}),
+    ...(c.grants.length && (role === "builder" || role === "reviewer") ? { grants: c.grants } : {}),
   });
   // A hook denial shows up twice: as a guard.log line and in the session's permission_denials.
   // Count it once (jd2cv-m1); the guard.log count still holds if the session dies before its result.
@@ -275,7 +283,7 @@ async function runRole(d: Deps, issue: Issue, role: Role, stage: Stage, attempt:
   const report = checkReport(rp);
   const fix = { ...(report.proposedHarnessFix ? { proposedHarnessFix: report.proposedHarnessFix } : {}), ...(role === "builder" && r.testDefect ? { testDefect: r.testDefect } : {}) };
   const changed = await d.workspace.changedFiles(c.worktree);
-  const denied = await outOfScope(d.exec, role, c.worktree, changed);
+  const denied = await outOfScope(d.exec, role, c.worktree, changed, c.grants);
   let failure: string | undefined;
   if (denied.length) failure = `out-of-scope writes by ${role}: ${denied.join(", ")}`;
   else if (!report.ok) failure = `report check failed: ${report.problems.join("; ")}`;
@@ -326,7 +334,10 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
       const changed = await d.workspace.filesChangedFromBase(c.worktree);
       const decision = assessRisk(issue.labels, changed, d.cfg.high_risk_paths);
       await d.workspace.push(c.worktree, c.branch);
-      const body = [`Closes #${issue.number}`, "", `Risk: ${decision.risk}`, ...decision.reasons.map((r) => `- ${r}`), "", "Opened by the factory coordinator. Agent-Role: coordinator"].join("\n");
+      const granted = grantedChanges(changed, c.grants);
+      // Owner condition c: every granted path that changed is listed at the top of the PR body.
+      const top = c.grants.length ? [`Granted paths changed (Grants: ${c.grants.join(", ")}):`, ...(granted.length ? granted.map((p) => `- ${p}`) : ["- none"]), ""] : [];
+      const body = [...top, `Closes #${issue.number}`, "", `Risk: ${decision.risk}`, ...decision.reasons.map((r) => `- ${r}`), "", "Opened by the factory coordinator. Agent-Role: coordinator"].join("\n");
       const pr = await d.gh.findOrOpenPullRequest(issue.owner, issue.repo, c.branch, d.cfg.base_branch, `${issue.title} (#${issue.number})`, body);
       await d.gh.setLabels(issue.owner, issue.repo, pr.number, [`risk:${decision.risk}`], [`risk:${decision.risk === "low" ? "high" : "low"}`]);
       if (decision.risk === "high") {

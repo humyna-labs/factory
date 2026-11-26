@@ -21,7 +21,7 @@ import { GitWorkspace } from "./workspace/git.ts";
 export interface Fixture {
   product: string;
   owner: string;
-  issues: Pick<Issue, "number" | "title" | "labels" | "body">[];
+  issues: (Pick<Issue, "number" | "title" | "labels" | "body"> & { author?: string })[];
   scenarios: Scenarios;
   expected: Record<string, string>;
 }
