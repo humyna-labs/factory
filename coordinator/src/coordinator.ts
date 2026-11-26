@@ -347,6 +347,7 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
         return { passed: true, reason: `high risk: ${decision.reasons.join("; ")}`, risk: "high", prUrl: pr.url, ...ZERO };
       }
       if (pr.merged) return { passed: true, reason: "already merged", risk: "low", prUrl: pr.url, ...ZERO };
+      if (pr.autoMerge) return { passed: true, reason: "auto-merge already enabled", risk: "low", prUrl: pr.url, ...ZERO };
       try {
         const m = await mergeLowRisk(d.gh, issue.owner, issue.repo, pr.number, decision.risk);
         return { passed: true, reason: m.merged ? "merged" : "auto-merge enabled", risk: "low", prUrl: pr.url, ...ZERO };

@@ -159,6 +159,39 @@ describe("the queue waits for an auto-merge to land before the next task (resume
     const frozen = { gh, now: () => new Date(0), sleep: async () => undefined } as unknown as Parameters<typeof waitForMerge>[0];
     expect(await waitForMerge(frozen, "o", "r", pr.number)).toBe("timeout");
   });
+  it("gh adapter reports an auto-merge that is already on for a reused PR", async () => {
+    const { GhGitHub } = await import("../src/github/gh.ts");
+    const list = (am: unknown): Exec => async () => ({ code: 0, stdout: JSON.stringify([{ number: 18, url: "https://github.com/o/r/pull/18", labels: [], autoMergeRequest: am }]), stderr: "", timedOut: false });
+    expect((await new GhGitHub(list({ mergeMethod: "SQUASH" })).findOrOpenPullRequest("o", "r", "h", "main", "t", "b")).autoMerge).toBe(true);
+    expect((await new GhGitHub(list(null)).findOrOpenPullRequest("o", "r", "h", "main", "t", "b")).autoMerge).toBe(false);
+  });
+  it("a low-risk re-run with auto-merge already on does not enable it again", async () => {
+    const r = await dryRun((f) => {
+      f.issues = [{ number: 403, title: "C", labels: ["factory:ready", "risk:low"], body: "x" }];
+      f.scenarios = {};
+    });
+    expect(r.gh.calls.filter((c) => c.op === "merge").length).toBe(1);
+    const pr = r.gh.pulls.get("humyna-labs/resume-sg:factory/resume-sg-403");
+    const issue = r.gh.issues.get("humyna-labs/resume-sg#403");
+    if (!pr || !issue) throw new Error("fixture");
+    pr.merged = false;
+    pr.autoMerge = true;
+    issue.state = "open";
+    const { runTask } = await import("../src/coordinator.ts");
+    const { loadFactoryConfig } = await import("../src/config.ts");
+    const { EventLog } = await import("../src/events.ts");
+    const { RunsCsvWriter } = await import("../src/runs-csv.ts");
+    const { StubRunner } = await import("../src/runner/stub.ts");
+    const { StubGates } = await import("../src/gates/stub.ts");
+    const { exec } = await import("../src/exec.ts");
+    const { join } = await import("node:path");
+    const cfg = loadFactoryConfig(join(r.repoDir, ".factory", "factory.yaml"));
+    const res = await runTask({ cfg, gh: r.gh, runner: new StubRunner({}), gates: new StubGates({}), workspace: new GitWorkspace(exec, { repoDir: r.repoDir, worktreesDir: r.paths.worktreesDir, baseBranch: "main", remote: "origin" }), exec, ledger: new RunsCsvWriter(r.paths.runsCsv), events: new EventLog(r.paths.events), paths: r.paths, now: () => new Date() }, issue);
+    expect(res.final).toBe("auto-merge");
+    expect(res.prUrl).toBe(pr.url);
+    expect(r.gh.calls.filter((c) => c.op === "merge").length).toBe(1);
+    expect(readEvents(r.paths.events).filter((e) => e.type === "stage" && e.stage === "pr").pop()?.reason).toBe("auto-merge already enabled");
+  });
   it("gh adapter maps pr view state", async () => {
     const out = (state: string, m: string): Exec => async () => ({ code: 0, stdout: JSON.stringify({ state, mergeStateStatus: m }), stderr: "", timedOut: false });
     const { GhGitHub } = await import("../src/github/gh.ts");

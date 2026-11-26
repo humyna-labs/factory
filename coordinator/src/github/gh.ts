@@ -64,9 +64,10 @@ export class GhGitHub implements GitHubAdapter {
 
   async findOrOpenPullRequest(owner: string, repo: string, head: string, base: string, title: string, body: string): Promise<PullRequest> {
     const R = `${owner}/${repo}`;
-    const found = JSON.parse(await this.gh(["pr", "list", "-R", R, "--head", head, "--state", "open", "--json", "number,url,labels"])) as { number: number; url: string; labels: GhLabel[] }[];
+    const found = JSON.parse(await this.gh(["pr", "list", "-R", R, "--head", head, "--state", "open", "--json", "number,url,labels,autoMergeRequest"])) as { number: number; url: string; labels: GhLabel[]; autoMergeRequest?: unknown }[];
     const first = found[0];
-    if (first) return { number: first.number, url: first.url, head, merged: false, autoMerge: false, labels: first.labels.map((l) => l.name) };
+    // A re-run reuses the open PR; report an auto-merge that is already on (jd2cv-m1).
+    if (first) return { number: first.number, url: first.url, head, merged: false, autoMerge: first.autoMergeRequest != null, labels: first.labels.map((l) => l.name) };
     const url = (await this.gh(["pr", "create", "-R", R, "--head", head, "--base", base, "--title", title, "--body-file", "-"], body)).trim().split("\n").pop() ?? "";
     return { number: Number(url.split("/").pop()), url, head, merged: false, autoMerge: false, labels: [] };
   }
