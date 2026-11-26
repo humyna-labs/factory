@@ -37,6 +37,8 @@ export interface StageOutcome {
   blockedActions: number;
   /** First proposed harness fix from the role report (section 8), if any. */
   proposedHarnessFix?: string;
+  /** Builder only: a test contradicts the issue (final message line "Test-defect: ..."). */
+  testDefect?: string;
   risk?: Risk;
   prUrl?: string;
 }

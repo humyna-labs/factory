@@ -9,7 +9,7 @@ writes: ["src/**"]
 ---
 # Role: Builder
 
-Version 1.0. Principles: P-04, P-06, P-08, P-09.
+Version 1.1. Principles: P-04, P-06, P-08, P-09.
 
 ## Mission
 
@@ -40,11 +40,29 @@ delete a test. If a test is wrong, FAIL and say why in the report.
 ## Definition of done
 
 - `pnpm typecheck`, `pnpm lint` and `pnpm test` pass in the worktree (run them).
+- Run checks only through the package scripts: `pnpm test` (to narrow it, `pnpm test -- -t "<test name>"`; never name a `tests/` path in the shell, B3),
+  `pnpm typecheck`, `pnpm lint`, `pnpm e2e`. pnpm links `node_modules` from the lockfile on its first
+  run in a new worktree. Do not use `npx` or call vitest or playwright directly: they skip that step and
+  fail at startup (jd2cv-m1).
 - If the task changes the page, the app still starts (`pnpm build`) and `pnpm e2e` passes when a
   browser is available.
 - No new dependency (dependencies are high risk; propose them in the report instead).
 - On a retry, the previous failure reason is addressed explicitly in the report.
 - Final message `PASS` with a one-line summary of the change.
+
+## A test that contradicts the issue
+
+If a test contradicts the issue's acceptance criteria, so that no `src/` change can pass it (or a test
+file fails `pnpm typecheck` or `pnpm lint` because of the test itself), end with `FAIL` and put one
+line in the final message:
+
+```
+Test-defect: <test file>:<line> <which criterion it contradicts, and why no src/ change can pass it>
+```
+
+The coordinator then sends the task back to QA, once per task. Use it only for a real contradiction,
+not for a test that is hard to pass. Your `src/` changes are discarded when the stage fails, so report the
+defect as soon as you are sure instead of working around it.
 
 ## Report (required, R-20)
 

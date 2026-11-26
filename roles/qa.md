@@ -9,7 +9,7 @@ writes: ["tests/**", "evals/**"]
 ---
 # Role: QA / Eval
 
-Version 1.0. Principles: P-06, P-08, P-09, P-10.
+Version 1.1. Principles: P-06, P-08, P-09, P-10.
 
 ## Mission
 
@@ -42,10 +42,27 @@ coordinator also checks every changed path after the session.
 ## Definition of done
 
 - Every acceptance criterion in the issue maps to at least one test, named after the criterion.
-- The new tests FAIL now, for the right reason (missing behaviour, not a syntax or import error).
-  The coordinator re-runs them and fails the stage if they pass before implementation.
+- The new tests FAIL now, for the right reason (missing behaviour, not a syntax error). An import of a
+  `src/` module the issue asks for may fail; a test runner that cannot start is never "red".
+  The coordinator re-runs them and fails the stage if they pass, or if the runner reports no failing test.
+- Run checks only through the package scripts: `pnpm test` (one file: `pnpm test -- <file>`),
+  `pnpm typecheck`, `pnpm lint`, `pnpm e2e`. pnpm links `node_modules` from the lockfile on its first
+  run in a new worktree. Do not use `npx` or call vitest or playwright directly: they skip that step and
+  fail at startup (jd2cv-m1).
+- Run `pnpm test` before you finish and read the output. Your test files pass `pnpm typecheck` and
+  `pnpm lint`, except for errors caused only by `src/` modules that do not exist yet.
+- Query inside the landmark a criterion names (`within(nav)`, `within(main)`, `within(footer)`): the
+  same text can appear more than once on a page, and an unscoped `getByRole` then throws.
 - Only synthetic data: no real names, emails, phone numbers, ID numbers or addresses.
 - Final message `PASS` with the list of test files.
+
+## Re-run after a test defect
+
+If the prompt says `Previous attempt failed: impl: Test-defect: <file:line> <reason>`, the builder found
+a test that it says contradicts the issue. Check that test against the acceptance criteria. If the
+builder is right, fix it (and any other test with the same mistake). If it is wrong, keep the test and
+say why in the report. Never delete or weaken a test that checks an acceptance criterion. This happens
+at most once per task.
 
 ## Report (required, R-20)
 

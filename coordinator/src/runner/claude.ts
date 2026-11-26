@@ -95,6 +95,13 @@ export function summarizeStream(lines: string[]): StreamSummary {
   return s;
 }
 
+/** A FAIL final message may carry one line "Test-defect: <file:line> <reason>" (builder, jd2cv-m1). */
+export function testDefectOf(finalText: string): string | undefined {
+  if (!/^\s*FAIL\b/.test(finalText)) return undefined;
+  const m = /^Test-defect:[ \t]*(\S.*)$/m.exec(finalText);
+  return m?.[1] ? m[1].replace(/[^\x20-\x7E]/g, "?").slice(0, 300) : undefined;
+}
+
 export class ClaudeRunner implements RoleRunner {
   readonly name = "claude" as const;
   private readonly o: ClaudeRunnerOptions;
@@ -118,6 +125,7 @@ export class ClaudeRunner implements RoleRunner {
         : sum.isError
           ? `session ended with ${sum.subtype}`
           : (sum.finalText.split("\n")[0] ?? "").slice(0, 160);
-    return { ok, turns: sum.turns, costUsd: sum.costUsd, blockedActions: sum.permissionDenials, summary: reason };
+    const defect = testDefectOf(sum.finalText);
+    return { ok, turns: sum.turns, costUsd: sum.costUsd, blockedActions: sum.permissionDenials, summary: reason, ...(defect ? { testDefect: defect } : {}) };
   }
 }

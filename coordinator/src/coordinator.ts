@@ -81,6 +81,10 @@ interface TaskCtx {
   id: string;
   max: number;
   implAttempts: number;
+  /** QA sessions so far (the first one plus re-runs after a test defect, jd2cv-m1). */
+  testRuns: number;
+  /** The last finished stage was a builder failure that named a defective test. */
+  testDefect: boolean;
   history: AttemptRecord[];
   reports: string[];
   previousFailure: string | undefined;
@@ -103,8 +107,10 @@ function rebuild(c: TaskCtx): void {
     if (e.type !== "stage") continue;
     const stage = e.stage as Stage;
     if (stage === "impl") c.implAttempts++;
+    if (stage === "tests") c.testRuns++;
+    c.testDefect = typeof e.test_defect === "string";
     c.history.push({ stage, attempt: Number(e.attempt), passed: e.passed === true, reason: String(e.reason ?? "") });
-    c.previousFailure = e.passed === true ? undefined : `${stage}: ${String(e.reason ?? "")}`;
+    c.previousFailure = e.passed === true ? undefined : c.testDefect ? `${stage}: Test-defect: ${String(e.test_defect)}` : `${stage}: ${String(e.reason ?? "")}`;
     if (typeof e.harness_fix_proposal === "string") c.lastHarnessFix = e.harness_fix_proposal;
     if (e.risk === "low" || e.risk === "high") c.risk = e.risk;
   }
@@ -113,7 +119,7 @@ function rebuild(c: TaskCtx): void {
 export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
   const id = taskId(issue);
   const res: TaskResult = { task: id, final: "ready", stoppedForTime: false, turns: 0, costUsd: 0, blockedActions: 0 };
-  const c: TaskCtx = { issue, id, max: d.cfg.max_impl_attempts, implAttempts: 0, history: [], reports: [], previousFailure: undefined, lastHarnessFix: undefined, risk: "high", past: [] };
+  const c: TaskCtx = { issue, id, max: d.cfg.max_impl_attempts, implAttempts: 0, testRuns: 0, testDefect: false, history: [], reports: [], previousFailure: undefined, lastHarnessFix: undefined, risk: "high", past: [] };
   const resumeAt = labelledStage(issue);
   const { worktree, branch } = await d.workspace.prepare(issue);
   let state: State;
@@ -154,13 +160,16 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
       break;
     }
     const stage = state as Stage;
-    const attempt = stage === "impl" ? c.implAttempts + 1 : Math.max(c.implAttempts, 1);
+    // QA counts its own sessions, so a re-run after a test defect gets its own report and trace.
+    const attempt = stage === "impl" ? c.implAttempts + 1 : stage === "tests" ? c.testRuns + 1 : Math.max(c.implAttempts, 1);
     const start = d.now();
     const rp = STAGE_ROLE[stage] === "coordinator" ? undefined : reportPath(d.paths.reportsDir, issue.repo, issue.number, stage, attempt, start);
     d.events.write({ ts: isoUtc(start), type: "stage-start", task: id, stage, attempt, ...(rp ? { report: rp } : {}) });
     const out = await runStage(d, issue, stage, attempt, { worktree, branch, previousFailure: c.previousFailure, reports: c.reports, reportPath: rp });
     const end = d.now();
     if (stage === "impl") c.implAttempts++;
+    if (stage === "tests") c.testRuns++;
+    c.testDefect = stage === "impl" && !out.passed && out.testDefect !== undefined;
     res.turns += out.turns;
     res.costUsd += out.costUsd;
     res.blockedActions += out.blockedActions;
@@ -181,8 +190,9 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
       blocked: out.blockedActions,
       ...(out.risk ? { risk: out.risk } : {}),
       ...(out.proposedHarnessFix ? { harness_fix_proposal: out.proposedHarnessFix } : {}),
+      ...(c.testDefect && out.testDefect ? { test_defect: out.testDefect } : {}),
     });
-    c.previousFailure = out.passed ? undefined : `${stage}: ${out.reason}`;
+    c.previousFailure = out.passed ? undefined : c.testDefect ? `${stage}: Test-defect: ${out.testDefect ?? ""}` : `${stage}: ${out.reason}`;
     state = await advance(d, c, stage, out.passed, res);
   }
   res.final = state;
@@ -196,7 +206,7 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
 /** Apply the transition after a finished stage: terminal rows, escalation, then the label. */
 async function advance(d: Deps, c: TaskCtx, stage: Stage, passed: boolean, res: TaskResult): Promise<State> {
   const { issue, id, max } = c;
-  const next = transition(stage, passed, { implAttempts: c.implAttempts, maxImplAttempts: max, risk: c.risk });
+  const next = transition(stage, passed, { implAttempts: c.implAttempts, maxImplAttempts: max, risk: c.risk, testDefect: c.testDefect, testRewrites: Math.max(0, c.testRuns - 1) });
   const done = (type: string) => c.past.some((e) => e.type === type);
   if (next === "escalated") {
     const input = { issue, failedStage: stage, history: c.history, maxImplAttempts: max, reportPaths: c.reports, ...(c.lastHarnessFix ? { proposedHarnessFix: c.lastHarnessFix } : {}) };
@@ -257,11 +267,13 @@ async function runRole(d: Deps, issue: Issue, role: Role, stage: Stage, attempt:
     timeoutMs: d.cfg.session_timeout_minutes * 60_000,
     ...(c.previousFailure ? { previousFailure: c.previousFailure } : {}),
   });
-  const blocked = r.blockedActions + Math.max(0, guardLines(d.paths.guardLog) - before);
+  // A hook denial shows up twice: as a guard.log line and in the session's permission_denials.
+  // Count it once (jd2cv-m1); the guard.log count still holds if the session dies before its result.
+  const blocked = Math.max(r.blockedActions, guardLines(d.paths.guardLog) - before);
   const base = { turns: r.turns, costUsd: r.costUsd, blockedActions: blocked };
   if (existsSync(rp)) appendReportIndex(d.paths.reportsDir, { path: rp, repo: issue.repo, issue: issue.number, stage, attempt, utc: isoUtc(d.now()) });
   const report = checkReport(rp);
-  const fix = report.proposedHarnessFix ? { proposedHarnessFix: report.proposedHarnessFix } : {};
+  const fix = { ...(report.proposedHarnessFix ? { proposedHarnessFix: report.proposedHarnessFix } : {}), ...(role === "builder" && r.testDefect ? { testDefect: r.testDefect } : {}) };
   const changed = await d.workspace.changedFiles(c.worktree);
   const denied = await outOfScope(d.exec, role, c.worktree, changed);
   let failure: string | undefined;
