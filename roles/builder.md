@@ -54,7 +54,7 @@ delete a test. If a test is wrong, FAIL and say why in the report.
 
 If a test contradicts the issue's acceptance criteria, so that no `src/` change can pass it (or a test
 file fails `pnpm typecheck` or `pnpm lint` because of the test itself), end with `FAIL` and put one
-line in the final message:
+line per defect in the final message (list every defect you found; QA gets all of them and rewrites once):
 
 ```
 Test-defect: <test file>:<line> <which criterion it contradicts, and why no src/ change can pass it>

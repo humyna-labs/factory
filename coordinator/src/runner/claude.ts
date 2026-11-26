@@ -98,11 +98,15 @@ export function summarizeStream(lines: string[]): StreamSummary {
   return s;
 }
 
-/** A FAIL final message may carry one line "Test-defect: <file:line> <reason>" (builder, jd2cv-m1). */
+/**
+ * A FAIL final message may carry "Test-defect: <file:line> <reason>" lines (builder, jd2cv-m1), one per defect.
+ * All of them go to QA, joined with " | " (resume-sg#13: the builder found two defects, only the first reached QA,
+ * and the second escalated the task). Each is cut to 300 bytes, at most 4 are kept.
+ */
 export function testDefectOf(finalText: string): string | undefined {
   if (!/^\s*FAIL\b/.test(finalText)) return undefined;
-  const m = /^Test-defect:[ \t]*(\S.*)$/m.exec(finalText);
-  return m?.[1] ? m[1].replace(/[^\x20-\x7E]/g, "?").slice(0, 300) : undefined;
+  const all = [...finalText.matchAll(/^Test-defect:[ \t]*(\S.*)$/gm)].map((m) => (m[1] ?? "").replace(/[^\x20-\x7E]/g, "?").slice(0, 300));
+  return all.length ? all.slice(0, 4).join(" | ") : undefined;
 }
 
 export class ClaudeRunner implements RoleRunner {

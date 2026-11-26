@@ -66,6 +66,9 @@ describe("Test-defect: the builder can send a defective test back to QA once", (
     expect(testDefectOf("FAIL something else")).toBeUndefined();
     expect(testDefectOf("FAIL x\nTest-defect: 开始定制 " + "y".repeat(400))).toMatch(/^\?{4} y+$/);
     expect(testDefectOf("FAIL x\nTest-defect: " + "y".repeat(400))?.length).toBe(300);
+    // resume-sg#13: every defect reaches QA, not only the first
+    expect(testDefectOf("FAIL two defects\nTest-defect: tests/e2e/a.spec.ts:218 indexOf finds the summary first\nOther text\nTest-defect: tests/unit/b.test.tsx:226 expects separate headings")).toBe("tests/e2e/a.spec.ts:218 indexOf finds the summary first | tests/unit/b.test.tsx:226 expects separate headings");
+    expect(testDefectOf("FAIL many\n" + Array.from({ length: 6 }, (_, i) => `Test-defect: t${i}.ts:1 x`).join("\n"))?.split(" | ").length).toBe(4);
   });
 
   it("flow: QA re-runs with the builder's reason, then the task finishes (stub roles)", async () => {
