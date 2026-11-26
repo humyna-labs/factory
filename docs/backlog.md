@@ -191,6 +191,16 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   any added `gitleaks:allow` comment and any change to `[allowlist]`/`[[allowlists]]` or a `.gitleaksignore` line, in
   hook mode and `--scan-git`; (2) the coordinator turns such a finding into risk:high with the reason "secret-scan
   allowlist change" (the PR waits for the owner) instead of failing verify; (3) cases and a mutation check.
+- [ ] **BL-36 QA test defects: let QA test against the builder's attempt, and allow two rewrites.** M, high. Deps:
+  none. Principles: P-02, P-06, P-08. Not adopted on 2026-11-26 16:12 SGT; the owner keeps it for the factory review
+  after resume-sg. Evidence (jd2cv-m1): resume-sg #4, #25 and #13 escalated on defective QA tests (non-unique
+  queries, `innerText` under `text-transform: uppercase`, an assertion the spec contradicts); one QA rewrite was not
+  enough twice, partly because only the first Test-defect line reached QA (fixed in `71ab18c`). Proposals: (1) when the
+  builder ends with Test-defect, keep its `src/` diff as a patch outside the branch, apply it in a scratch copy for the
+  QA re-run so QA can run its tests against a real implementation, and drop it before QA commits; (2)
+  `MAX_TEST_REWRITES` 2, still counted per task; (3) the QA prompt rule: never select a control by position or as the
+  only one of its role in a landmark; use its accessible name inside the feature's own region. Acceptance: dry-run tests
+  for each, a mutation per behaviour, and the golden task.
 
 ## Needs live sessions or the human
 
