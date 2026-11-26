@@ -54,13 +54,13 @@ delete a test. If a test is wrong, FAIL and say why in the report.
 
 If a test contradicts the issue's acceptance criteria, so that no `src/` change can pass it (or a test
 file fails `pnpm typecheck` or `pnpm lint` because of the test itself), end with `FAIL` and put one
-line per defect in the final message (list every defect you found; QA gets all of them and rewrites once):
+line per defect in the final message (list every defect you found; QA gets all of them; it can rewrite twice per task):
 
 ```
 Test-defect: <test file>:<line> <which criterion it contradicts, and why no src/ change can pass it>
 ```
 
-The coordinator then sends the task back to QA, once per task. Use it only for a real contradiction,
+The coordinator then sends the task back to QA, at most twice per task. Use it only for a real contradiction,
 not for a test that is hard to pass. Your `src/` changes are discarded when the stage fails, so report the
 defect as soon as you are sure instead of working around it.
 

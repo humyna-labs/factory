@@ -10,8 +10,11 @@ export type State = (typeof STATES)[number];
 export type Risk = "low" | "high";
 
 export const DEFAULT_MAX_IMPL_ATTEMPTS = 3;
-/** QA re-runs allowed per task after the builder reports a defective test (jd2cv-m1). */
-export const MAX_TEST_REWRITES = 1;
+/**
+ * QA re-runs allowed per task after the builder reports a defective test (jd2cv-m1). 2 since BL-36 (owner,
+ * 2026-11-27 07:50 SGT): one re-run was not enough five times (resume-sg #38, #11 twice, #42, #41).
+ */
+export const MAX_TEST_REWRITES = 2;
 
 export function isTerminal(s: State): s is TerminalState {
   return (TERMINAL_STATES as readonly string[]).includes(s);
@@ -40,7 +43,7 @@ const RETRYABLE: readonly Stage[] = ["impl", "verify", "review", "compliance"];
  * ready -> tests -> impl -> verify -> review -> compliance -> pr -> auto-merge | needs-human
  * Any retryable failure -> impl while attempts remain, else escalated.
  * A failure in tests (QA) or pr escalates at once.
- * A builder failure that names a defective test goes back to tests once (MAX_TEST_REWRITES): the
+ * A builder failure that names a defective test goes back to tests up to MAX_TEST_REWRITES times per task: the
  * builder may not edit tests, so retrying impl cannot fix it (jd2cv-m1, resume-sg#4).
  */
 export function transition(state: State, passed: boolean, ctx: TransitionContext): State {

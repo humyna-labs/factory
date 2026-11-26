@@ -46,14 +46,16 @@ describe("red check needs failing tests, not a crashed runner", () => {
   });
 });
 
-describe("Test-defect: the builder can send a defective test back to QA once", () => {
+describe("Test-defect: the builder can send a defective test back to QA twice per task (BL-36)", () => {
   const ctx = (implAttempts: number, testDefect: boolean, testRewrites: number) => ({ implAttempts, maxImplAttempts: 3, risk: "low" as const, testDefect, testRewrites });
-  it("goes back to tests on a test defect, once per task, even on the last attempt", () => {
-    expect(MAX_TEST_REWRITES).toBe(1);
+  it("goes back to tests on a test defect, twice per task, even on the last attempt", () => {
+    expect(MAX_TEST_REWRITES).toBe(2);
     expect(transition("impl", false, ctx(1, true, 0))).toBe("tests");
     expect(transition("impl", false, ctx(3, true, 0))).toBe("tests");
-    expect(transition("impl", false, ctx(1, true, 1))).toBe("impl");
-    expect(transition("impl", false, ctx(3, true, 1))).toBe("escalated");
+    expect(transition("impl", false, ctx(2, true, 1))).toBe("tests");
+    expect(transition("impl", false, ctx(3, true, 1))).toBe("tests");
+    expect(transition("impl", false, ctx(1, true, 2))).toBe("impl");
+    expect(transition("impl", false, ctx(3, true, 2))).toBe("escalated");
   });
   it("only from impl, only on failure", () => {
     expect(transition("impl", true, ctx(1, true, 0))).toBe("verify");
@@ -85,14 +87,26 @@ describe("Test-defect: the builder can send a defective test back to QA once", (
     expect(ev.find((e) => e.type === "stage" && e.stage === "impl" && e.passed === false)?.test_defect).toMatch(/contradicts AC1/);
   });
 
-  it("flow: a second test defect does not loop; the builder keeps its attempts and the task escalates", async () => {
+  it("flow: a second test defect goes back to QA too, then the task finishes (resume-sg#38, #11, #41, #42)", async () => {
+    const r = await dryRun((f) => {
+      f.issues = [{ number: 204, title: "Shell", labels: ["factory:ready", "risk:low"], body: "x" }];
+      f.scenarios = { "resume-sg#204": { builder: ["test-defect", "test-defect", "pass"] } };
+    });
+    expect(r.digest.done.map((d) => d.task)).toEqual(["resume-sg#204"]);
+    const rows = rowsOf(r.paths.runsCsv, "resume-sg#204");
+    expect(rows.map((x) => `${x.stage}:${x.outcome}`).slice(0, 6)).toEqual(["tests:pass", "impl:fail", "tests:pass", "impl:fail", "tests:pass", "impl:pass"]);
+    const starts = readEvents(r.paths.events).filter((e) => e.task === "resume-sg#204" && e.type === "stage-start" && e.stage === "tests").map((e) => e.attempt);
+    expect(starts).toEqual([1, 2, 3]);
+  });
+
+  it("flow: a third test defect does not loop; the builder keeps its attempts and the task escalates", async () => {
     const r = await dryRun((f) => {
       f.issues = [{ number: 202, title: "Shell", labels: ["factory:ready", "risk:low"], body: "x" }];
       f.scenarios = { "resume-sg#202": { builder: ["test-defect", "test-defect", "test-defect", "test-defect"] } };
     });
     expect(r.digest.escalated.map((d) => d.task)).toEqual(["resume-sg#202"]);
     const rows = rowsOf(r.paths.runsCsv, "resume-sg#202").filter((x) => x.role !== "coordinator");
-    expect(rows.map((x) => x.stage)).toEqual(["tests", "impl", "tests", "impl", "impl"]);
+    expect(rows.map((x) => x.stage)).toEqual(["tests", "impl", "tests", "impl", "tests", "impl"]);
   });
 });
 
