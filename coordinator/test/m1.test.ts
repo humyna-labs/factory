@@ -134,6 +134,7 @@ describe("the queue waits for an auto-merge to land before the next task (resume
     // the wait comes before the next task starts
     const ev = readEvents(r.paths.events).map((e) => `${e.type}:${e.task}`);
     expect(ev.indexOf("merge-wait:resume-sg#401")).toBeLessThan(ev.indexOf("task-start:resume-sg#402"));
+    expect(r.gh.calls.filter((c) => c.op === "pullRequestState").length).toBe(2);
   });
   it("waitForMerge: pending polls sleep, DIRTY stops at once, a long wait times out", async () => {
     const { FakeGitHub } = await import("../src/github/fake.ts");
@@ -154,6 +155,9 @@ describe("the queue waits for an auto-merge to land before the next task (resume
     gh.mergeStateOverride = "BLOCKED";
     expect(await waitForMerge(d, "o", "r", pr.number)).toBe("timeout");
     expect(slept.length).toBe(MERGE_WAIT_MS / MERGE_POLL_MS);
+    // a clock that does not move still ends the wait (poll cap)
+    const frozen = { gh, now: () => new Date(0), sleep: async () => undefined } as unknown as Parameters<typeof waitForMerge>[0];
+    expect(await waitForMerge(frozen, "o", "r", pr.number)).toBe("timeout");
   });
   it("gh adapter maps pr view state", async () => {
     const out = (state: string, m: string): Exec => async () => ({ code: 0, stdout: JSON.stringify({ state, mergeStateStatus: m }), stderr: "", timedOut: false });
