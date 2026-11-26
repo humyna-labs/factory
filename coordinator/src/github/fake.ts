@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Issue } from "../types.ts";
-import type { ChecksState, GitHubAdapter, PullRequest } from "./types.ts";
+import type { ChecksState, GitHubAdapter, PullRequest, PullRequestState } from "./types.ts";
 
 interface Call {
   op: string;
@@ -107,6 +107,22 @@ export class FakeGitHub implements GitHubAdapter {
   async checks(owner: string, repo: string, pr: number): Promise<ChecksState> {
     this.record("checks", owner, repo, pr);
     return this.checksState;
+  }
+
+  /** Tests: polls that still report the PR open before it lands, and a mergeState to report. */
+  pendingPolls = 0;
+  mergeStateOverride: string | undefined;
+
+  async pullRequestState(owner: string, repo: string, pr: number): Promise<PullRequestState> {
+    this.record("pullRequestState", owner, repo, pr);
+    const found = [...this.pulls.values()].find((p) => p.number === pr);
+    if (!found) throw new Error(`fake: no pull request ${pr}`);
+    if (this.mergeStateOverride) return { state: "open", mergeState: this.mergeStateOverride };
+    if (this.pendingPolls > 0) {
+      this.pendingPolls--;
+      return { state: "open", mergeState: "BLOCKED" };
+    }
+    return { state: found.merged ? "merged" : "open", mergeState: found.merged ? "CLEAN" : "BLOCKED" };
   }
 
   async merge(owner: string, repo: string, pr: number): Promise<{ merged: boolean; autoMerge: boolean }> {

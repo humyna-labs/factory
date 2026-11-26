@@ -1,7 +1,7 @@
 // gh CLI adapter. Written and unit-tested for command assembly; not run against GitHub in Phase 1.
 import type { Exec } from "../exec.ts";
 import type { Issue } from "../types.ts";
-import type { ChecksState, GitHubAdapter, PullRequest } from "./types.ts";
+import type { ChecksState, GitHubAdapter, PullRequest, PullRequestState } from "./types.ts";
 
 const TIMEOUT_MS = 60_000;
 
@@ -78,6 +78,12 @@ export class GhGitHub implements GitHubAdapter {
     if (buckets.some((b) => b === "fail" || b === "cancel")) return "failure";
     if (buckets.length === 0 || buckets.some((b) => b === "pending")) return "pending";
     return "success";
+  }
+
+  async pullRequestState(owner: string, repo: string, pr: number): Promise<PullRequestState> {
+    const g = JSON.parse(await this.gh(["pr", "view", String(pr), "-R", `${owner}/${repo}`, "--json", "state,mergeStateStatus"])) as { state: string; mergeStateStatus?: string };
+    const st = g.state.toUpperCase();
+    return { state: st === "MERGED" ? "merged" : st === "CLOSED" ? "closed" : "open", mergeState: g.mergeStateStatus ?? "UNKNOWN" };
   }
 
   /** Enables GitHub auto-merge: GitHub merges once required checks pass. */

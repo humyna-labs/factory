@@ -40,6 +40,8 @@ export interface Deps {
   now: () => Date;
   /** Stop starting new stages after this time (queue mode, R-12). */
   deadline?: Date;
+  /** Waits between merge polls (queue mode); tests pass a no-op. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface TaskResult {

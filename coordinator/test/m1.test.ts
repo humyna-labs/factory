@@ -117,3 +117,49 @@ describe("blocked actions are counted once", () => {
     expect(r.digest.blockedActions).toBe(1);
   });
 });
+
+describe("the queue waits for an auto-merge to land before the next task (resume-sg#18)", () => {
+  it("waits while the PR is open, then starts the next task from the merged base", async () => {
+    const r = await dryRun((f) => {
+      f.issues = [
+        { number: 401, title: "A", labels: ["factory:ready", "risk:low"], body: "x" },
+        { number: 402, title: "B", labels: ["factory:ready", "risk:low"], body: "x" },
+      ];
+      f.scenarios = {};
+    });
+    expect(r.digest.done.map((t) => t.task)).toEqual(["resume-sg#401", "resume-sg#402"]);
+    expect(r.digest.unmerged).toEqual([]);
+    const waits = readEvents(r.paths.events).filter((e) => e.type === "merge-wait");
+    expect(waits.map((e) => `${e.task}:${e.result}`)).toEqual(["resume-sg#401:merged", "resume-sg#402:merged"]);
+    // the wait comes before the next task starts
+    const ev = readEvents(r.paths.events).map((e) => `${e.type}:${e.task}`);
+    expect(ev.indexOf("merge-wait:resume-sg#401")).toBeLessThan(ev.indexOf("task-start:resume-sg#402"));
+  });
+  it("waitForMerge: pending polls sleep, DIRTY stops at once, a long wait times out", async () => {
+    const { FakeGitHub } = await import("../src/github/fake.ts");
+    const { waitForMerge, MERGE_POLL_MS, MERGE_WAIT_MS } = await import("../src/queue.ts");
+    const gh = new FakeGitHub([]);
+    const pr = await gh.findOrOpenPullRequest("o", "r", "h", "main", "t", "b");
+    await gh.merge("o", "r", pr.number);
+    let t = 0;
+    const slept: number[] = [];
+    const d = { gh, now: () => new Date(t), sleep: async (ms: number) => { slept.push(ms); t += ms; } } as unknown as Parameters<typeof waitForMerge>[0];
+    gh.pendingPolls = 3;
+    expect(await waitForMerge(d, "o", "r", pr.number)).toBe("merged");
+    expect(slept).toEqual([MERGE_POLL_MS, MERGE_POLL_MS, MERGE_POLL_MS]);
+    gh.mergeStateOverride = "DIRTY";
+    slept.length = 0;
+    expect(await waitForMerge(d, "o", "r", pr.number)).toBe("conflict");
+    expect(slept).toEqual([]);
+    gh.mergeStateOverride = "BLOCKED";
+    expect(await waitForMerge(d, "o", "r", pr.number)).toBe("timeout");
+    expect(slept.length).toBe(MERGE_WAIT_MS / MERGE_POLL_MS);
+  });
+  it("gh adapter maps pr view state", async () => {
+    const out = (state: string, m: string): Exec => async () => ({ code: 0, stdout: JSON.stringify({ state, mergeStateStatus: m }), stderr: "", timedOut: false });
+    const { GhGitHub } = await import("../src/github/gh.ts");
+    expect(await new GhGitHub(out("MERGED", "UNKNOWN")).pullRequestState("o", "r", 1)).toEqual({ state: "merged", mergeState: "UNKNOWN" });
+    expect(await new GhGitHub(out("OPEN", "DIRTY")).pullRequestState("o", "r", 1)).toEqual({ state: "open", mergeState: "DIRTY" });
+    expect(await new GhGitHub(out("CLOSED", "")).pullRequestState("o", "r", 1)).toEqual({ state: "closed", mergeState: "" });
+  });
+});
