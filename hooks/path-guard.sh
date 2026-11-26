@@ -21,7 +21,11 @@ tool=check
 log_block() {
   [ "$mode" = hook ] || return 0
   mkdir -p "$(dirname "$GUARD_LOG")" 2>/dev/null || return 0
-  printf '%s role=%s tool=%s rule=%s target=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$role" "$tool" "$1" "$2" >>"$GUARD_LOG" 2>/dev/null || true
+  # One line per block (jd2cv-m1): a heredoc command used to add one log line per line of its
+  # text, and the coordinator counted lines (408 "blocked actions" for 8 blocks). Control bytes
+  # become spaces; the target is cut to 300 bytes.
+  _t=$(printf '%s' "$2" | tr '\000-\037\177' ' ' | cut -b 1-300)
+  printf '%s role=%s tool=%s rule=%s target=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$role" "$tool" "$1" "$_t" >>"$GUARD_LOG" 2>/dev/null || true
 }
 
 deny() { # <rule> <target> <remediation>
