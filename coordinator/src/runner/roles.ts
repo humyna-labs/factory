@@ -51,7 +51,9 @@ export function sessionPrompt(s: RoleSession, baseBranch: string): string {
   const lines = [
     `Task: ${s.issue.repo}#${s.issue.number}: ${s.issue.title}`,
     `Stage: ${s.stage}, attempt ${s.attempt} of ${s.maxAttempts}. Role: ${s.role}.`,
-    `Worktree: ${s.worktree} (branch ${s.branch}, base ${baseBranch}).`,
+    // jd2cv-m1 (resume-sg#6): the clone's local base branch is never updated, only the remote-tracking
+    // ref is fetched; a diff against the local branch showed earlier merged work as this branch's.
+    `Worktree: ${s.worktree} (branch ${s.branch}, base origin/${baseBranch}, freshly fetched). Your diff is \`git diff origin/${baseBranch}...HEAD\`; never diff against the local ${baseBranch} branch, it may be stale.`,
     `Objective: ${OBJECTIVE[s.role]}`,
   ];
   if (s.previousFailure) lines.push(`Previous attempt failed: ${s.previousFailure}`);

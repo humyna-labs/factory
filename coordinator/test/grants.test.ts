@@ -82,6 +82,16 @@ describe("sessions: only the builder gets write grants; the reviewer gets the ch
   });
 });
 
+describe("prompts name the fetched base, not the stale local branch (resume-sg#6)", () => {
+  it("every role is told to diff against origin/main", () => {
+    for (const role of ["qa", "builder", "reviewer", "compliance"] as const) {
+      const p = sessionPrompt({ role, issue: issue(), stage: "review", attempt: 1, maxAttempts: 3, worktree: "/tmp/wt", branch: "b", reportPath: "/tmp/r.md", tracePath: "/tmp/t.jsonl", timeoutMs: 1 }, "main");
+      expect(p).toContain("base origin/main");
+      expect(p).toContain("git diff origin/main...HEAD");
+    }
+  });
+});
+
 describe("post-session check passes grants to path-guard for the builder only", () => {
   it("allows granted paths for the builder, still denies them for QA and without grants", async () => {
     const files = ["public/_headers", "src/security/keyStore.ts", "src/templates/a.css", "package.json"];
