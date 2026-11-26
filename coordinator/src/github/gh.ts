@@ -1,7 +1,7 @@
 // gh CLI adapter. Written and unit-tested for command assembly; not run against GitHub in Phase 1.
 import type { Exec } from "../exec.ts";
 import type { Issue } from "../types.ts";
-import type { ChecksState, GitHubAdapter, PullRequest } from "./types.ts";
+import type { ChecksState, GitHubAdapter, PullRequest, PullRequestState } from "./types.ts";
 
 const TIMEOUT_MS = 60_000;
 
@@ -14,6 +14,7 @@ interface GhIssue {
   body: string;
   state: string;
   labels: GhLabel[];
+  author?: { login?: string } | null;
 }
 
 export class GhGitHub implements GitHubAdapter {
@@ -31,16 +32,16 @@ export class GhGitHub implements GitHubAdapter {
   }
 
   private toIssue(owner: string, repo: string, g: GhIssue): Issue {
-    return { owner, repo, number: g.number, title: g.title, body: g.body, labels: g.labels.map((l) => l.name), state: g.state.toLowerCase() === "open" ? "open" : "closed" };
+    return { owner, repo, number: g.number, title: g.title, body: g.body, labels: g.labels.map((l) => l.name), state: g.state.toLowerCase() === "open" ? "open" : "closed", ...(g.author?.login ? { author: g.author.login } : {}) };
   }
 
   async listOpenIssues(owner: string, repo: string, label: string): Promise<Issue[]> {
-    const out = await this.gh(["issue", "list", "-R", `${owner}/${repo}`, "--state", "open", "--label", label, "--limit", "100", "--json", "number,title,body,state,labels"]);
+    const out = await this.gh(["issue", "list", "-R", `${owner}/${repo}`, "--state", "open", "--label", label, "--limit", "100", "--json", "number,title,body,state,labels,author"]);
     return (JSON.parse(out) as GhIssue[]).map((g) => this.toIssue(owner, repo, g));
   }
 
   async getIssue(owner: string, repo: string, number: number): Promise<Issue> {
-    const out = await this.gh(["issue", "view", String(number), "-R", `${owner}/${repo}`, "--json", "number,title,body,state,labels"]);
+    const out = await this.gh(["issue", "view", String(number), "-R", `${owner}/${repo}`, "--json", "number,title,body,state,labels,author"]);
     return this.toIssue(owner, repo, JSON.parse(out) as GhIssue);
   }
 
@@ -63,9 +64,10 @@ export class GhGitHub implements GitHubAdapter {
 
   async findOrOpenPullRequest(owner: string, repo: string, head: string, base: string, title: string, body: string): Promise<PullRequest> {
     const R = `${owner}/${repo}`;
-    const found = JSON.parse(await this.gh(["pr", "list", "-R", R, "--head", head, "--state", "open", "--json", "number,url,labels"])) as { number: number; url: string; labels: GhLabel[] }[];
+    const found = JSON.parse(await this.gh(["pr", "list", "-R", R, "--head", head, "--state", "open", "--json", "number,url,labels,autoMergeRequest"])) as { number: number; url: string; labels: GhLabel[]; autoMergeRequest?: unknown }[];
     const first = found[0];
-    if (first) return { number: first.number, url: first.url, head, merged: false, autoMerge: false, labels: first.labels.map((l) => l.name) };
+    // A re-run reuses the open PR; report an auto-merge that is already on (jd2cv-m1).
+    if (first) return { number: first.number, url: first.url, head, merged: false, autoMerge: first.autoMergeRequest != null, labels: first.labels.map((l) => l.name) };
     const url = (await this.gh(["pr", "create", "-R", R, "--head", head, "--base", base, "--title", title, "--body-file", "-"], body)).trim().split("\n").pop() ?? "";
     return { number: Number(url.split("/").pop()), url, head, merged: false, autoMerge: false, labels: [] };
   }
@@ -77,6 +79,12 @@ export class GhGitHub implements GitHubAdapter {
     if (buckets.some((b) => b === "fail" || b === "cancel")) return "failure";
     if (buckets.length === 0 || buckets.some((b) => b === "pending")) return "pending";
     return "success";
+  }
+
+  async pullRequestState(owner: string, repo: string, pr: number): Promise<PullRequestState> {
+    const g = JSON.parse(await this.gh(["pr", "view", String(pr), "-R", `${owner}/${repo}`, "--json", "state,mergeStateStatus"])) as { state: string; mergeStateStatus?: string };
+    const st = g.state.toUpperCase();
+    return { state: st === "MERGED" ? "merged" : st === "CLOSED" ? "closed" : "open", mergeState: g.mergeStateStatus ?? "UNKNOWN" };
   }
 
   /** Enables GitHub auto-merge: GitHub merges once required checks pass. */

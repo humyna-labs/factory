@@ -81,9 +81,45 @@ describe("stream-json parsing", () => {
   it("treats a missing result event as an error", () => {
     expect(summarizeStream(["{}"]).sawResult).toBe(false);
   });
+  // resume-sg#11 (2026-11-26): a background subagent finished after QA's PASS and started one more turn.
+  const res = (o: Record<string, unknown>): string => JSON.stringify({ type: "result", is_error: false, subtype: "success", permission_denials: [], ...o });
+  it("keeps the verdict when a later result event carries no verdict", () => {
+    const s = summarizeStream([
+      res({ num_turns: 35, total_cost_usd: 1.1267, result: "PASS: the tests are written", permission_denials: [{}, {}] }),
+      res({ num_turns: 1, total_cost_usd: 1.1453, result: "The monitor was only waiting on the Explore subagent.", is_error: true, subtype: "error_during_execution", permission_denials: [{}] }),
+    ]);
+    expect(s).toMatchObject({ sawResult: true, isError: false, subtype: "success", turns: 36, costUsd: 1.1453, permissionDenials: 2, finalText: "PASS: the tests are written" });
+  });
+  it("takes a verdict that arrives after a result event without one", () => {
+    const s = summarizeStream([res({ num_turns: 3, total_cost_usd: 0.2, result: "Waiting for the subagent." }), res({ num_turns: 2, total_cost_usd: 0.3, result: "FAIL: one test\nTest-defect: a.ts:1 x" })]);
+    expect(s.finalText.startsWith("FAIL: one test")).toBe(true);
+    expect(s.turns).toBe(5);
+  });
+  it("keeps the session cost when a later result event has no cost", () => {
+    const s = summarizeStream([res({ num_turns: 2, total_cost_usd: 0.8, result: "PASS ok" }), JSON.stringify({ type: "result", is_error: false, num_turns: 1, result: "done" })]);
+    expect(s.costUsd).toBe(0.8);
+  });
+  it("lets a later verdict replace an earlier one", () => {
+    const s = summarizeStream([res({ num_turns: 1, result: "PASS early" }), res({ num_turns: 1, result: "FAIL late" })]);
+    expect(s.finalText).toBe("FAIL late");
+  });
+  it("uses the last result event when none carries a verdict", () => {
+    const s = summarizeStream([res({ num_turns: 1, result: "first" }), res({ num_turns: 1, result: "second", is_error: true, subtype: "error_max_turns" })]);
+    expect(s).toMatchObject({ finalText: "second", isError: true, subtype: "error_max_turns" });
+  });
 });
 
 describe("ClaudeRunner", () => {
+  it("passes when a follow-up turn after the PASS verdict has no verdict (resume-sg#11)", async () => {
+    const fakeExec: Exec = async (_c, _a, o) => {
+      o?.onStdoutLine?.(JSON.stringify({ type: "result", is_error: false, num_turns: 35, total_cost_usd: 1.1, result: "PASS: done" }));
+      o?.onStdoutLine?.(JSON.stringify({ type: "result", is_error: false, num_turns: 1, total_cost_usd: 1.2, result: "Nothing left to re-arm." }));
+      return { code: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const runner = new ClaudeRunner({ exec: fakeExec, loadRole: loadRoleConfig, ...opts });
+    const r = await runner.run(session("qa"));
+    expect(r).toMatchObject({ ok: true, turns: 36, costUsd: 1.2, summary: "PASS: done" });
+  });
   it("passes only with exit 0, a result event and a PASS verdict", async () => {
     let seenKind = "";
     const fakeExec: Exec = async (_c, _a, o) => {

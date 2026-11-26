@@ -3,6 +3,7 @@
 // the freshly fetched remote base, and finished worktrees are removed.
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import type { ChildKind } from "../env.ts";
 import type { Exec } from "../exec.ts";
 import type { Issue, LedgerRole } from "../types.ts";
 
@@ -26,8 +27,8 @@ export class GitWorkspace {
     this.o = o;
   }
 
-  private async git(cwd: string, args: string[]): Promise<string> {
-    const r = await this.run("git", args, { cwd, kind: "git", timeoutMs: 120_000 });
+  private async git(cwd: string, args: string[], kind: ChildKind = "git"): Promise<string> {
+    const r = await this.run("git", args, { cwd, kind, timeoutMs: 120_000 });
     if (r.code !== 0) throw new Error(`git ${args.join(" ")} failed: ${r.stderr.trim().split("\n")[0] ?? ""}`);
     return r.stdout;
   }
@@ -97,6 +98,9 @@ export class GitWorkspace {
   }
 
   async push(worktree: string, branch: string): Promise<void> {
-    await this.git(worktree, ["push", "-q", "--force-with-lease", this.o.remote, `${branch}:refs/heads/${branch}`]);
+    // The push alone gets GH_TOKEN: the credential helper is `gh auth git-credential`, and the
+    // plain git env (R-05) has no token, so the first live push failed (jd2cv-m1, resume-sg#4).
+    // Roles never reach this code; their settings deny git push.
+    await this.git(worktree, ["push", "-q", "--force-with-lease", this.o.remote, `${branch}:refs/heads/${branch}`], "gh");
   }
 }

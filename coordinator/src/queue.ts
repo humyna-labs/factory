@@ -30,6 +30,8 @@ export interface Digest {
   notStarted: string[];
   /** Tasks resumed from a factory:<stage> label after an interruption (W2-06). */
   resumed: string[];
+  /** Auto-merge PRs that had not landed when the queue moved on (jd2cv-m1). */
+  unmerged: { task: string; pr: string; result: string }[];
   /** Worktrees still on disk at the end, mostly needs-human tasks (W2-05). */
   keptWorktrees: string[];
   blockedActions: number;
@@ -47,7 +49,7 @@ export async function runQueue(d: Deps, maxHours: number): Promise<Digest> {
   for (const s of STAGES) inFlight.push(...orderTasks(await d.gh.listOpenIssues(owner, repo, stateLabel(s))));
   const seen = new Set(inFlight.map((i) => i.number));
   const ready = [...inFlight, ...orderTasks(await d.gh.listOpenIssues(owner, repo, stateLabel("ready"))).filter((i) => !seen.has(i.number))];
-  const dg: Digest = { started: isoUtc(started), ended: "", done: [], needsHuman: [], escalated: [], stopped: [], skippedBlocked: [], notStarted: [], resumed: [], keptWorktrees: [], blockedActions: 0, costUsd: 0, turns: 0 };
+  const dg: Digest = { started: isoUtc(started), ended: "", done: [], needsHuman: [], escalated: [], stopped: [], skippedBlocked: [], notStarted: [], resumed: [], unmerged: [], keptWorktrees: [], blockedActions: 0, costUsd: 0, turns: 0 };
   for (const issue of ready) {
     if (d.now() >= deadline) {
       dg.notStarted.push(taskId(issue));
@@ -78,13 +80,40 @@ export async function runQueue(d: Deps, maxHours: number): Promise<Digest> {
     if (r.resumed) dg.resumed.push(r.task);
     if (r.resumeLoop) dg.skippedBlocked.push({ task: r.task, reason: `interrupted twice at ${r.final}; resume loop, needs a look` });
     else if (r.stoppedForTime) dg.stopped.push(r);
-    else if (r.final === "auto-merge") dg.done.push(r);
+    else if (r.final === "auto-merge") {
+      dg.done.push(r);
+      // jd2cv-m1 (resume-sg#18): the next task branches from origin/main, so wait until this
+      // auto-merge has landed; otherwise two tasks that touch the same file conflict.
+      const n = Number(/\/pull\/(\d+)$/.exec(r.prUrl ?? "")?.[1] ?? NaN);
+      if (Number.isInteger(n)) {
+        const result = await waitForMerge(deps, owner, repo, n);
+        d.events.write({ ts: isoUtc(d.now()), type: "merge-wait", task: r.task, pr: n, result });
+        if (result !== "merged") dg.unmerged.push({ task: r.task, pr: r.prUrl ?? "", result });
+      }
+    }
     else if (r.final === "needs-human") dg.needsHuman.push(r);
     else if (r.final === "escalated") dg.escalated.push(r);
   }
   dg.keptWorktrees = d.workspace.kept();
   dg.ended = isoUtc(d.now());
   return dg;
+}
+
+export const MERGE_WAIT_MS = 30 * 60_000;
+export const MERGE_POLL_MS = 30_000;
+
+/** Poll until the PR is merged or closed, conflicts (DIRTY never fixes itself), or MERGE_WAIT_MS pass. */
+export async function waitForMerge(d: Deps, owner: string, repo: string, pr: number): Promise<"merged" | "closed" | "conflict" | "timeout"> {
+  const sleep = d.sleep ?? ((ms: number) => new Promise<void>((res) => setTimeout(res, ms)));
+  const until = d.now().getTime() + MERGE_WAIT_MS;
+  for (let polls = 0; ; polls++) {
+    const s = await d.gh.pullRequestState(owner, repo, pr);
+    if (s.state === "merged") return "merged";
+    if (s.state === "closed") return "closed";
+    if (s.mergeState === "DIRTY") return "conflict";
+    if (d.now().getTime() >= until || polls >= MERGE_WAIT_MS / MERGE_POLL_MS) return "timeout";
+    await sleep(MERGE_POLL_MS);
+  }
 }
 
 export function formatDigest(dg: Digest): string {
@@ -103,6 +132,7 @@ export function formatDigest(dg: Digest): string {
     ...(dg.skippedBlocked.length ? dg.skippedBlocked.map((s) => `  - ${s.task} ${s.reason}`) : ["  - none"]),
     `Not started, time budget (${dg.notStarted.length}): ${dg.notStarted.join(", ") || "none"}`,
     `Resumed after an interruption (${dg.resumed.length}): ${dg.resumed.join(", ") || "none"}`,
+    `Auto-merge not landed (${dg.unmerged.length}): ${dg.unmerged.map((u) => `${u.task} ${u.pr} ${u.result}`).join(", ") || "none"}`,
     `Worktrees kept (${dg.keptWorktrees.length}): ${dg.keptWorktrees.join(", ") || "none"}`,
     `Blocked actions: ${dg.blockedActions}`,
     `Cost: ${dg.costUsd.toFixed(4)} USD over ${dg.turns} turns`,

@@ -39,7 +39,11 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   if [ "$remote_sha" = "$zero" ]; then
     range=$(git rev-list "$local_sha" --not --remotes 2>/dev/null) || range_rc=$?
   else
-    range=$(git rev-list "$remote_sha..$local_sha" 2>/dev/null) || range_rc=$?
+    # jd2cv-m1 (resume-sg#6): an update of a branch whose task was re-run on a fresh base also
+    # carries the base commits merged on GitHub since the old tip (squash merges by GitHub or the
+    # owner, other authors). Like a new branch, check only commits that no remote-tracking ref has;
+    # the pushed tip is always checked (P3).
+    range=$(git rev-list "$local_sha" --not "$remote_sha" --remotes 2>/dev/null) || range_rc=$?
   fi
   # RULE P2 begin  (Codex 8: a failed enumeration must not look like "no new commits")
   [ "$range_rc" = 0 ] || fail "git rev-list failed for ${local_sha} (remote ${remote_sha}; is the remote commit fetched?); failing closed"

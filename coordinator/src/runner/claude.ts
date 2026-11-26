@@ -3,6 +3,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Exec } from "../exec.ts";
+import { factoryPath } from "../paths.ts";
 import { sessionPrompt } from "./roles.ts";
 import type { RoleConfig, RoleResult, RoleRunner, RoleSession } from "./types.ts";
 
@@ -34,7 +35,9 @@ export function buildClaudeInvocation(s: RoleSession, rc: RoleConfig, o: Pick<Cl
     "--append-system-prompt-file",
     rc.promptFile,
     "--settings",
-    rc.settings,
+    // A granted builder session uses the settings without the Edit denies of the granted dirs;
+    // path-guard G1 then allows exactly the granted entries (jd2cv-m1).
+    s.role === "builder" && s.grants?.length ? factoryPath("settings", "builder-grants.json") : rc.settings,
     "--model",
     rc.model,
     "--max-turns",
@@ -56,7 +59,7 @@ export function buildClaudeInvocation(s: RoleSession, rc: RoleConfig, o: Pick<Cl
     input: sessionPrompt(s, o.baseBranch),
     // Hooks inherit this env: path-guard (reports dir, guard log), stop-report (this session's
     // report, W2-08) and session-start (escalations dir).
-    env: { FACTORY_REPORTS_DIR: o.reportsDir, FACTORY_GUARD_LOG: o.guardLog, FACTORY_REPORT_PATH: s.reportPath, ...(o.escalationsDir ? { FACTORY_ESCALATIONS_DIR: o.escalationsDir } : {}) },
+    env: { ...(s.role === "builder" && s.grants?.length ? { FACTORY_GRANTS: s.grants.join(",") } : {}), FACTORY_REPORTS_DIR: o.reportsDir, FACTORY_GUARD_LOG: o.guardLog, FACTORY_REPORT_PATH: s.reportPath, ...(o.escalationsDir ? { FACTORY_ESCALATIONS_DIR: o.escalationsDir } : {}) },
   };
 }
 
@@ -70,9 +73,20 @@ export interface StreamSummary {
   finalText: string;
 }
 
-/** Parse Claude Code stream-json output (one JSON object per line). Ignores lines it cannot parse. */
+const VERDICT_RE = /^\s*(?:PASS|FAIL)\b/;
+
+/**
+ * Parse Claude Code stream-json output (one JSON object per line). Ignores lines it cannot parse.
+ * A session can emit several result events: a background task (subagent, Monitor) that finishes after the
+ * verdict starts one more turn, with its own result event (resume-sg#11, 2026-11-26: QA's PASS was replaced
+ * by "The monitor was only waiting on the Explore subagent ..." and the task escalated). The verdict, error
+ * state and final text therefore come from the last result event that starts with PASS or FAIL (the last
+ * result event when none does); turns are summed; cost and blocked actions are the session maximum, because
+ * total_cost_usd is cumulative and the denial count may be.
+ */
 export function summarizeStream(lines: string[]): StreamSummary {
   const s: StreamSummary = { sawResult: false, isError: true, subtype: "missing", turns: 0, costUsd: 0, permissionDenials: 0, finalText: "" };
+  let verdictSeen = false;
   for (const line of lines) {
     if (!line.trim()) continue;
     let ev: Record<string, unknown>;
@@ -83,16 +97,31 @@ export function summarizeStream(lines: string[]): StreamSummary {
     }
     if (ev.type !== "result") continue;
     s.sawResult = true;
-    s.isError = ev.is_error === true;
-    s.subtype = typeof ev.subtype === "string" ? ev.subtype : "unknown";
-    s.turns = typeof ev.num_turns === "number" ? ev.num_turns : 0;
-    s.costUsd = typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : 0;
+    s.turns += typeof ev.num_turns === "number" ? ev.num_turns : 0;
+    s.costUsd = Math.max(s.costUsd, typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : 0);
     // Verified on Claude Code 2.1.331 (one live call, 2026-11-25): permission_denials is an
     // array and safety_stops is a number on the result event. Both count as blocked actions.
-    s.permissionDenials = (Array.isArray(ev.permission_denials) ? ev.permission_denials.length : 0) + (typeof ev.safety_stops === "number" ? ev.safety_stops : 0);
-    s.finalText = typeof ev.result === "string" ? ev.result : "";
+    s.permissionDenials = Math.max(s.permissionDenials, (Array.isArray(ev.permission_denials) ? ev.permission_denials.length : 0) + (typeof ev.safety_stops === "number" ? ev.safety_stops : 0));
+    const text = typeof ev.result === "string" ? ev.result : "";
+    const isVerdict = VERDICT_RE.test(text);
+    if (verdictSeen && !isVerdict) continue;
+    verdictSeen ||= isVerdict;
+    s.isError = ev.is_error === true;
+    s.subtype = typeof ev.subtype === "string" ? ev.subtype : "unknown";
+    s.finalText = text;
   }
   return s;
+}
+
+/**
+ * A FAIL final message may carry "Test-defect: <file:line> <reason>" lines (builder, jd2cv-m1), one per defect.
+ * All of them go to QA, joined with " | " (resume-sg#13: the builder found two defects, only the first reached QA,
+ * and the second escalated the task). Each is cut to 300 bytes, at most 4 are kept.
+ */
+export function testDefectOf(finalText: string): string | undefined {
+  if (!/^\s*FAIL\b/.test(finalText)) return undefined;
+  const all = [...finalText.matchAll(/^Test-defect:[ \t]*(\S.*)$/gm)].map((m) => (m[1] ?? "").replace(/[^\x20-\x7E]/g, "?").slice(0, 300));
+  return all.length ? all.slice(0, 4).join(" | ") : undefined;
 }
 
 export class ClaudeRunner implements RoleRunner {
@@ -118,6 +147,7 @@ export class ClaudeRunner implements RoleRunner {
         : sum.isError
           ? `session ended with ${sum.subtype}`
           : (sum.finalText.split("\n")[0] ?? "").slice(0, 160);
-    return { ok, turns: sum.turns, costUsd: sum.costUsd, blockedActions: sum.permissionDenials, summary: reason };
+    const defect = testDefectOf(sum.finalText);
+    return { ok, turns: sum.turns, costUsd: sum.costUsd, blockedActions: sum.permissionDenials, summary: reason, ...(defect ? { testDefect: defect } : {}) };
   }
 }

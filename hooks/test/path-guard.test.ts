@@ -32,6 +32,18 @@ describe("path-guard (R-03, A3)", () => {
     expect(readFileSync(log, "utf8")).toMatch(/role=builder tool=Write rule=R7 target=tests\/a.ts/);
   });
 
+  it("logs one line per block, also for a multi-line command (jd2cv-m1)", () => {
+    const log = `/tmp/factory-guard-log-ml-${process.pid}.log`;
+    rmSync(log, { force: true });
+    const cmd = "cat > tests/a.ts <<'EOF'\nline one\nline two\n\tline three\nEOF";
+    runPathGuard(GUARD, { name: "x", role: "builder", kind: "tool", tool: "Bash", target: cmd, expect: "deny", rule: "B3" }, { FACTORY_GUARD_LOG: log });
+    runPathGuard(GUARD, { name: "x", role: "builder", kind: "tool", tool: "Bash", target: "ls tests/" + "x".repeat(1000), expect: "deny", rule: "B3" }, { FACTORY_GUARD_LOG: log });
+    const lines = readFileSync(log, "utf8").split("\n").filter(Boolean);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/rule=B3 target=cat > tests\/a\.ts <<'EOF' line one line two {2}line three EOF$/);
+    expect(Buffer.byteLength(lines[1] ?? "")).toBeLessThan(400);
+  });
+
   it("fails closed on malformed input", () => {
     // P9: never the real /workspace/runs/guard.log, which BL-09 reads.
     const r = spawnSync("bash", [GUARD, "builder"], { input: "not json", encoding: "utf8", env: { PATH: process.env.PATH ?? "", FACTORY_GUARD_LOG: "/tmp/factory-guard-test.log" } });

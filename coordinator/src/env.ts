@@ -3,7 +3,9 @@
 
 /** Variables a child process of a given kind may receive. Nothing else is passed through. */
 const PASSTHROUGH = {
-  base: ["PATH", "HOME", "LANG", "TZ"],
+  // PLAYWRIGHT_BROWSERS_PATH: the image ships Chromium in /ms-playwright; without it the e2e
+  // gate and every role session look in ~/.cache and fail (jd2cv-m1, first live run). Not a secret.
+  base: ["PATH", "HOME", "LANG", "TZ", "PLAYWRIGHT_BROWSERS_PATH"],
   gh: ["GH_TOKEN"],
   // Claude Code authentication, if the container uses an env var instead of ~/.claude.
   claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],

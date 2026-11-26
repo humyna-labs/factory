@@ -62,6 +62,10 @@ describe("environment (R-05)", () => {
     expect(Object.keys(childEnv("plain"))).not.toContain("GH_TOKEN");
     expect(passthroughNames("gh")).toContain("GH_TOKEN");
   });
+  it("passes the Playwright browser path to gates and role sessions, never GH_TOKEN to them", () => {
+    for (const kind of ["plain", "claude", "git"] as const) expect(passthroughNames(kind)).toContain("PLAYWRIGHT_BROWSERS_PATH");
+    expect(passthroughNames("claude")).not.toContain("GH_TOKEN");
+  });
 });
 
 describe("risk", () => {

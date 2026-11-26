@@ -24,6 +24,8 @@ export interface RoleSession {
   tracePath: string;
   previousFailure?: string;
   timeoutMs: number;
+  /** Protected paths this issue grants (jd2cv-m1). Builder writes; the reviewer checks them. */
+  grants?: readonly string[];
 }
 
 export interface RoleResult {
@@ -33,6 +35,8 @@ export interface RoleResult {
   /** Actions refused by auto mode or by our hooks (R-04). */
   blockedActions: number;
   summary: string;
+  /** The session's final message carried "Test-defect: <file:line> <reason>". */
+  testDefect?: string;
 }
 
 /** Runs one role session. Receives no GitHub adapter: roles cannot merge or label (R-02). */

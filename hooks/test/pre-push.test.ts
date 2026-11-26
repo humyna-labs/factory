@@ -74,6 +74,39 @@ describe("pre-push hook (R-07)", () => {
     expect(out.status).toBe(1);
     expect(out.stderr).toMatch(/user\.email is not set/);
   });
+  it("an update after a re-run on a fresh base skips base commits already on the remote (resume-sg#6)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "factory-prepush-rerun-"));
+    const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+    const commit = (msg: string, file: string, author?: string) => {
+      writeFileSync(join(dir, file), msg);
+      git("add", "-A");
+      git("commit", "-q", "-m", msg, ...(author ? ["--author", author] : []));
+      return git("rev-parse", "HEAD").stdout.trim();
+    };
+    git("init", "-q", "-b", "main");
+    git("config", "user.name", "factory-bot");
+    git("config", "user.email", "bot@localhost");
+    const base = commit("chore: base\n\nAgent-Role: coordinator", "base.txt");
+    git("update-ref", "refs/remotes/origin/main", base);
+    git("checkout", "-q", "-b", "factory/p-6");
+    const oldTip = commit("feat: first run\n\nAgent-Role: builder", "a.txt");
+    git("update-ref", "refs/remotes/origin/factory/p-6", oldTip);
+    git("checkout", "-q", "main");
+    const merged = commit("Info pages (#5)", "b.txt", "Someone <someone@localhost>");
+    const push = (tip: string) => spawnSync("bash", [HOOK, "origin", GOOD_URL], { cwd: dir, encoding: "utf8", input: `refs/heads/factory/p-6 ${tip} refs/heads/factory/p-6 ${oldTip}\n` });
+    git("checkout", "-q", "-B", "factory/p-6", "main");
+    const newTip = commit("feat: re-run\n\nAgent-Role: builder", "c.txt");
+    // the merged commit is not on a remote-tracking ref yet: it is checked and refused
+    expect(push(newTip).stderr).toMatch(/REJECTED: commit [0-9a-f]+ (has no|is not authored)/);
+    // once origin/main has it (fetched), it is not this push's to vouch for
+    git("update-ref", "refs/remotes/origin/main", merged);
+    expect(push(newTip).status).toBe(0);
+    // the agent's own commits are still checked
+    const bad = commit("feat: no trailer", "d.txt");
+    expect(push(bad).stderr).toMatch(/Agent-Role/);
+    const foreign = commit("feat: x\n\nAgent-Role: builder", "e.txt", "Someone <someone@localhost>");
+    expect(push(foreign).stderr).toMatch(/machine account/);
+  });
   it("rejects a commit by another author", () => {
     const r = repo();
     expect(r.push(GOOD_URL, "refs/heads/f", r.commit("feat: x\n\nAgent-Role: builder", "b.txt", "Someone <someone@localhost>")).stderr).toMatch(/machine account/);

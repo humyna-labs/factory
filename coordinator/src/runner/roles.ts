@@ -3,6 +3,7 @@ import { parse } from "yaml";
 import { z } from "zod";
 import { factoryPath } from "../paths.ts";
 import type { Role } from "../types.ts";
+import { GRANT_REVIEW, type Grant } from "../grants.ts";
 import type { RoleConfig, RoleSession } from "./types.ts";
 
 const FrontMatter = z
@@ -50,10 +51,17 @@ export function sessionPrompt(s: RoleSession, baseBranch: string): string {
   const lines = [
     `Task: ${s.issue.repo}#${s.issue.number}: ${s.issue.title}`,
     `Stage: ${s.stage}, attempt ${s.attempt} of ${s.maxAttempts}. Role: ${s.role}.`,
-    `Worktree: ${s.worktree} (branch ${s.branch}, base ${baseBranch}).`,
+    // jd2cv-m1 (resume-sg#6): the clone's local base branch is never updated, only the remote-tracking
+    // ref is fetched; a diff against the local branch showed earlier merged work as this branch's.
+    `Worktree: ${s.worktree} (branch ${s.branch}, base origin/${baseBranch}, freshly fetched). Your diff is \`git diff origin/${baseBranch}...HEAD\`; never diff against the local ${baseBranch} branch, it may be stale.`,
     `Objective: ${OBJECTIVE[s.role]}`,
   ];
   if (s.previousFailure) lines.push(`Previous attempt failed: ${s.previousFailure}`);
+  if (s.grants?.length && (s.role === "builder" || s.role === "reviewer")) {
+    lines.push("", `Granted protected paths for this issue (Grants line, owner-approved): ${s.grants.join(", ")}.`);
+    if (s.role === "builder") lines.push("You may write these paths too, with the Write and Edit tools (shell commands still may not name src/security or src/templates, B3). Change them only as far as the issue needs; every changed granted path is listed at the top of the PR for the owner.");
+    else lines.push("Check every granted path that changed (git diff of the branch against the base), and FAIL if any check fails:", ...s.grants.map((g) => `- ${GRANT_REVIEW[g as Grant] ?? `${g}: not a grantable path; FAIL.`}`));
+  }
   lines.push(
     "",
     "Issue body:",

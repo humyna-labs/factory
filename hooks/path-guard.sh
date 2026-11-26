@@ -21,7 +21,11 @@ tool=check
 log_block() {
   [ "$mode" = hook ] || return 0
   mkdir -p "$(dirname "$GUARD_LOG")" 2>/dev/null || return 0
-  printf '%s role=%s tool=%s rule=%s target=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$role" "$tool" "$1" "$2" >>"$GUARD_LOG" 2>/dev/null || true
+  # One line per block (jd2cv-m1): a heredoc command used to add one log line per line of its
+  # text, and the coordinator counted lines (408 "blocked actions" for 8 blocks). Control bytes
+  # become spaces; the target is cut to 300 bytes.
+  _t=$(printf '%s' "$2" | tr '\000-\037\177' ' ' | cut -b 1-300)
+  printf '%s role=%s tool=%s rule=%s target=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$role" "$tool" "$1" "$_t" >>"$GUARD_LOG" 2>/dev/null || true
 }
 
 deny() { # <rule> <target> <remediation>
@@ -33,6 +37,20 @@ deny() { # <rule> <target> <remediation>
 allow() { # <rule>
   printf 'path-guard: allowed rule=%s\n' "$1" >&2
   exit 0
+}
+
+# Issue-scoped grants (jd2cv-m1, owner decision 2026-11-26). The coordinator sets FACTORY_GRANTS
+# (comma-separated) only for a builder session of a risk:high issue opened by humyna-bot or
+# humyna whose "Grants:" line it accepted. This script trusts nothing else: only these three
+# exact entries mean anything, for the builder only, and never for harness paths (R3 runs first).
+granted() { # <rel>
+  _g=",${FACTORY_GRANTS:-},"
+  case "$1" in
+    public/_headers) case "$_g" in *",public/_headers,"*) return 0 ;; esac ;;
+    src/security/*) case "$_g" in *",src/security/**,"*) return 0 ;; esac ;;
+    src/templates/*) case "$_g" in *",src/templates/**,"*) return 0 ;; esac ;;
+  esac
+  return 1
 }
 
 # ---------------------------------------------------------------- paths
@@ -98,6 +116,9 @@ check_path() { # <root> <path>
       deny R5 "$rel" "QA writes only tests/ and evals/. If src/ needs a change, describe it in your report."
       ;;
     builder)
+      # RULE G1 begin  (a granted protected path, see granted() above)
+      if granted "$rel"; then allow G1; fi
+      # RULE G1 end
       # RULE R6 begin  (contracts, templates and security code are not the builder's)
       case "$rel" in
         src/contracts/* | src/templates/* | src/security/*)

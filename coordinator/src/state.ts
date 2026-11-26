@@ -10,6 +10,11 @@ export type State = (typeof STATES)[number];
 export type Risk = "low" | "high";
 
 export const DEFAULT_MAX_IMPL_ATTEMPTS = 3;
+/**
+ * QA re-runs allowed per task after the builder reports a defective test (jd2cv-m1). 2 since BL-36 (owner,
+ * 2026-11-27 07:50 SGT): one re-run was not enough five times (resume-sg #38, #11 twice, #42, #41).
+ */
+export const MAX_TEST_REWRITES = 2;
 
 export function isTerminal(s: State): s is TerminalState {
   return (TERMINAL_STATES as readonly string[]).includes(s);
@@ -24,6 +29,10 @@ export interface TransitionContext {
   implAttempts: number;
   maxImplAttempts: number;
   risk: Risk;
+  /** The failed stage was the builder reporting a test that contradicts the issue (Test-defect:). */
+  testDefect?: boolean;
+  /** QA re-runs already made for this task after a test defect. */
+  testRewrites?: number;
 }
 
 /** Stages whose failure sends the task back to the builder. */
@@ -34,6 +43,8 @@ const RETRYABLE: readonly Stage[] = ["impl", "verify", "review", "compliance"];
  * ready -> tests -> impl -> verify -> review -> compliance -> pr -> auto-merge | needs-human
  * Any retryable failure -> impl while attempts remain, else escalated.
  * A failure in tests (QA) or pr escalates at once.
+ * A builder failure that names a defective test goes back to tests up to MAX_TEST_REWRITES times per task: the
+ * builder may not edit tests, so retrying impl cannot fix it (jd2cv-m1, resume-sg#4).
  */
 export function transition(state: State, passed: boolean, ctx: TransitionContext): State {
   if (isTerminal(state)) throw new Error(`no transition out of terminal state ${state}`);
@@ -54,6 +65,7 @@ export function transition(state: State, passed: boolean, ctx: TransitionContext
         return ctx.risk === "low" ? "auto-merge" : "needs-human";
     }
   }
+  if (state === "impl" && ctx.testDefect === true && (ctx.testRewrites ?? 0) < MAX_TEST_REWRITES) return "tests";
   if ((RETRYABLE as readonly State[]).includes(state)) {
     return ctx.implAttempts < ctx.maxImplAttempts ? "impl" : "escalated";
   }

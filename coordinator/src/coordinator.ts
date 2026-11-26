@@ -13,6 +13,7 @@ import { writeEscalationDraft, harnessFixIssue, harnessFixLine, type AttemptReco
 import { readEvents, type EventLog, type FactoryEvent } from "./events.ts";
 import type { Exec } from "./exec.ts";
 import { featureOf, markFeature } from "./features.ts";
+import { decideGrants, grantedChanges, type Grant } from "./grants.ts";
 import type { GateRunner } from "./gates/types.ts";
 import type { GitHubAdapter } from "./github/types.ts";
 import { mergeLowRisk } from "./merge.ts";
@@ -39,6 +40,8 @@ export interface Deps {
   now: () => Date;
   /** Stop starting new stages after this time (queue mode, R-12). */
   deadline?: Date;
+  /** Waits between merge polls (queue mode); tests pass a no-op. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface TaskResult {
@@ -81,6 +84,10 @@ interface TaskCtx {
   id: string;
   max: number;
   implAttempts: number;
+  /** QA sessions so far (the first one plus re-runs after a test defect, jd2cv-m1). */
+  testRuns: number;
+  /** The last finished stage was a builder failure that named a defective test. */
+  testDefect: boolean;
   history: AttemptRecord[];
   reports: string[];
   previousFailure: string | undefined;
@@ -88,6 +95,8 @@ interface TaskCtx {
   risk: Risk;
   /** Events of this task since its last task-start. */
   past: FactoryEvent[];
+  /** Protected paths the issue grants to the builder (jd2cv-m1). */
+  grants: Grant[];
 }
 
 function taskEvents(d: Deps, id: string): FactoryEvent[] {
@@ -103,17 +112,39 @@ function rebuild(c: TaskCtx): void {
     if (e.type !== "stage") continue;
     const stage = e.stage as Stage;
     if (stage === "impl") c.implAttempts++;
+    if (stage === "tests") c.testRuns++;
+    c.testDefect = typeof e.test_defect === "string";
     c.history.push({ stage, attempt: Number(e.attempt), passed: e.passed === true, reason: String(e.reason ?? "") });
-    c.previousFailure = e.passed === true ? undefined : `${stage}: ${String(e.reason ?? "")}`;
+    c.previousFailure = e.passed === true ? undefined : c.testDefect ? `${stage}: Test-defect: ${String(e.test_defect)}` : `${stage}: ${String(e.reason ?? "")}`;
     if (typeof e.harness_fix_proposal === "string") c.lastHarnessFix = e.harness_fix_proposal;
     if (e.risk === "low" || e.risk === "high") c.risk = e.risk;
   }
 }
 
+/**
+ * Restart a task from the tests stage after its issue was revised (jd2cv-m1, owner 15:25 SGT: resume-sg#8 was
+ * revised to brief v5.2 after QA had written tests for v4). The coordinator, not a human, moves the label (R-02):
+ * it records a task-restart event, removes the task worktree (the next run starts from the fetched base and the
+ * branch is reset there), and sets factory:ready. Refuses an open PR's task (re-run it instead) and a closed issue.
+ */
+export async function restartTask(d: Deps, issue: Issue, reason: string): Promise<Issue> {
+  if (issue.state !== "open") throw new Error(`${taskId(issue)} is closed; nothing to restart`);
+  const from = STATES.find((s) => issue.labels.includes(stateLabel(s)));
+  if (from === "pr" || from === "needs-human" || from === "auto-merge") throw new Error(`${taskId(issue)} is at ${from}; a PR exists, re-run it instead of restarting`);
+  d.events.write({ ts: isoUtc(d.now()), type: "task-restart", task: taskId(issue), from: from ?? "none", reason: reason.replace(/[^\x20-\x7E]/g, "?").slice(0, 200) });
+  const wt = d.workspace.worktreeFor(issue);
+  await d.workspace.cleanup(wt);
+  await setState(d, issue, "ready");
+  return { ...issue, labels: [...issue.labels.filter((l) => !l.startsWith("factory:") || l === "factory:blocked"), stateLabel("ready")] };
+}
+
 export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
   const id = taskId(issue);
   const res: TaskResult = { task: id, final: "ready", stoppedForTime: false, turns: 0, costUsd: 0, blockedActions: 0 };
-  const c: TaskCtx = { issue, id, max: d.cfg.max_impl_attempts, implAttempts: 0, history: [], reports: [], previousFailure: undefined, lastHarnessFix: undefined, risk: "high", past: [] };
+  const c: TaskCtx = { issue, id, max: d.cfg.max_impl_attempts, implAttempts: 0, testRuns: 0, testDefect: false, history: [], reports: [], previousFailure: undefined, lastHarnessFix: undefined, risk: "high", past: [], grants: [] };
+  const gd = decideGrants(issue);
+  c.grants = gd.grants;
+  if (gd.grants.length || gd.refused) d.events.write({ ts: isoUtc(d.now()), type: "grants", task: id, granted: gd.grants.join(","), ...(gd.refused ? { refused: gd.refused } : {}) });
   const resumeAt = labelledStage(issue);
   const { worktree, branch } = await d.workspace.prepare(issue);
   let state: State;
@@ -154,13 +185,16 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
       break;
     }
     const stage = state as Stage;
-    const attempt = stage === "impl" ? c.implAttempts + 1 : Math.max(c.implAttempts, 1);
+    // QA counts its own sessions, so a re-run after a test defect gets its own report and trace.
+    const attempt = stage === "impl" ? c.implAttempts + 1 : stage === "tests" ? c.testRuns + 1 : Math.max(c.implAttempts, 1);
     const start = d.now();
     const rp = STAGE_ROLE[stage] === "coordinator" ? undefined : reportPath(d.paths.reportsDir, issue.repo, issue.number, stage, attempt, start);
     d.events.write({ ts: isoUtc(start), type: "stage-start", task: id, stage, attempt, ...(rp ? { report: rp } : {}) });
-    const out = await runStage(d, issue, stage, attempt, { worktree, branch, previousFailure: c.previousFailure, reports: c.reports, reportPath: rp });
+    const out = await runStage(d, issue, stage, attempt, { worktree, branch, previousFailure: c.previousFailure, reports: c.reports, reportPath: rp, grants: c.grants });
     const end = d.now();
     if (stage === "impl") c.implAttempts++;
+    if (stage === "tests") c.testRuns++;
+    c.testDefect = stage === "impl" && !out.passed && out.testDefect !== undefined;
     res.turns += out.turns;
     res.costUsd += out.costUsd;
     res.blockedActions += out.blockedActions;
@@ -181,8 +215,9 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
       blocked: out.blockedActions,
       ...(out.risk ? { risk: out.risk } : {}),
       ...(out.proposedHarnessFix ? { harness_fix_proposal: out.proposedHarnessFix } : {}),
+      ...(c.testDefect && out.testDefect ? { test_defect: out.testDefect } : {}),
     });
-    c.previousFailure = out.passed ? undefined : `${stage}: ${out.reason}`;
+    c.previousFailure = out.passed ? undefined : c.testDefect ? `${stage}: Test-defect: ${out.testDefect ?? ""}` : `${stage}: ${out.reason}`;
     state = await advance(d, c, stage, out.passed, res);
   }
   res.final = state;
@@ -196,7 +231,7 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
 /** Apply the transition after a finished stage: terminal rows, escalation, then the label. */
 async function advance(d: Deps, c: TaskCtx, stage: Stage, passed: boolean, res: TaskResult): Promise<State> {
   const { issue, id, max } = c;
-  const next = transition(stage, passed, { implAttempts: c.implAttempts, maxImplAttempts: max, risk: c.risk });
+  const next = transition(stage, passed, { implAttempts: c.implAttempts, maxImplAttempts: max, risk: c.risk, testDefect: c.testDefect, testRewrites: Math.max(0, c.testRuns - 1) });
   const done = (type: string) => c.past.some((e) => e.type === type);
   if (next === "escalated") {
     const input = { issue, failedStage: stage, history: c.history, maxImplAttempts: max, reportPaths: c.reports, ...(c.lastHarnessFix ? { proposedHarnessFix: c.lastHarnessFix } : {}) };
@@ -234,6 +269,7 @@ interface StageCtx {
   previousFailure: string | undefined;
   reports: string[];
   reportPath: string | undefined;
+  grants: Grant[];
 }
 
 const ZERO = { turns: 0, costUsd: 0, blockedActions: 0 };
@@ -256,14 +292,17 @@ async function runRole(d: Deps, issue: Issue, role: Role, stage: Stage, attempt:
     tracePath: `${d.paths.tracesDir}/${issue.repo}-${issue.number}/${stage}-${attempt}.jsonl`,
     timeoutMs: d.cfg.session_timeout_minutes * 60_000,
     ...(c.previousFailure ? { previousFailure: c.previousFailure } : {}),
+    ...(c.grants.length && (role === "builder" || role === "reviewer") ? { grants: c.grants } : {}),
   });
-  const blocked = r.blockedActions + Math.max(0, guardLines(d.paths.guardLog) - before);
+  // A hook denial shows up twice: as a guard.log line and in the session's permission_denials.
+  // Count it once (jd2cv-m1); the guard.log count still holds if the session dies before its result.
+  const blocked = Math.max(r.blockedActions, guardLines(d.paths.guardLog) - before);
   const base = { turns: r.turns, costUsd: r.costUsd, blockedActions: blocked };
   if (existsSync(rp)) appendReportIndex(d.paths.reportsDir, { path: rp, repo: issue.repo, issue: issue.number, stage, attempt, utc: isoUtc(d.now()) });
   const report = checkReport(rp);
-  const fix = report.proposedHarnessFix ? { proposedHarnessFix: report.proposedHarnessFix } : {};
+  const fix = { ...(report.proposedHarnessFix ? { proposedHarnessFix: report.proposedHarnessFix } : {}), ...(role === "builder" && r.testDefect ? { testDefect: r.testDefect } : {}) };
   const changed = await d.workspace.changedFiles(c.worktree);
-  const denied = await outOfScope(d.exec, role, c.worktree, changed);
+  const denied = await outOfScope(d.exec, role, c.worktree, changed, c.grants);
   let failure: string | undefined;
   if (denied.length) failure = `out-of-scope writes by ${role}: ${denied.join(", ")}`;
   else if (!report.ok) failure = `report check failed: ${report.problems.join("; ")}`;
@@ -314,7 +353,10 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
       const changed = await d.workspace.filesChangedFromBase(c.worktree);
       const decision = assessRisk(issue.labels, changed, d.cfg.high_risk_paths);
       await d.workspace.push(c.worktree, c.branch);
-      const body = [`Closes #${issue.number}`, "", `Risk: ${decision.risk}`, ...decision.reasons.map((r) => `- ${r}`), "", "Opened by the factory coordinator. Agent-Role: coordinator"].join("\n");
+      const granted = grantedChanges(changed, c.grants);
+      // Owner condition c: every granted path that changed is listed at the top of the PR body.
+      const top = c.grants.length ? [`Granted paths changed (Grants: ${c.grants.join(", ")}):`, ...(granted.length ? granted.map((p) => `- ${p}`) : ["- none"]), ""] : [];
+      const body = [...top, `Closes #${issue.number}`, "", `Risk: ${decision.risk}`, ...decision.reasons.map((r) => `- ${r}`), "", "Opened by the factory coordinator. Agent-Role: coordinator"].join("\n");
       const pr = await d.gh.findOrOpenPullRequest(issue.owner, issue.repo, c.branch, d.cfg.base_branch, `${issue.title} (#${issue.number})`, body);
       await d.gh.setLabels(issue.owner, issue.repo, pr.number, [`risk:${decision.risk}`], [`risk:${decision.risk === "low" ? "high" : "low"}`]);
       if (decision.risk === "high") {
@@ -322,6 +364,7 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
         return { passed: true, reason: `high risk: ${decision.reasons.join("; ")}`, risk: "high", prUrl: pr.url, ...ZERO };
       }
       if (pr.merged) return { passed: true, reason: "already merged", risk: "low", prUrl: pr.url, ...ZERO };
+      if (pr.autoMerge) return { passed: true, reason: "auto-merge already enabled", risk: "low", prUrl: pr.url, ...ZERO };
       try {
         const m = await mergeLowRisk(d.gh, issue.owner, issue.repo, pr.number, decision.risk);
         return { passed: true, reason: m.merged ? "merged" : "auto-merge enabled", risk: "low", prUrl: pr.url, ...ZERO };

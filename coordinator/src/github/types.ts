@@ -11,6 +11,12 @@ export interface PullRequest {
 
 export type ChecksState = "success" | "failure" | "pending";
 
+/** Where a pull request stands; mergeState is GitHub's mergeStateStatus (CLEAN, BLOCKED, DIRTY, ...). */
+export interface PullRequestState {
+  state: "open" | "merged" | "closed";
+  mergeState: string;
+}
+
 /**
  * GitHub access for the coordinator only. Role runners never receive this object (R-02):
  * merge and state labels are changed only by deterministic coordinator code.
@@ -24,6 +30,8 @@ export interface GitHubAdapter {
   createIssue(owner: string, repo: string, title: string, body: string, labels: string[]): Promise<{ number: number; url: string }>;
   findOrOpenPullRequest(owner: string, repo: string, head: string, base: string, title: string, body: string): Promise<PullRequest>;
   checks(owner: string, repo: string, pr: number): Promise<ChecksState>;
+  /** Read-only: whether an auto-merge has landed (queue waits for it, jd2cv-m1). */
+  pullRequestState(owner: string, repo: string, pr: number): Promise<PullRequestState>;
   /** Low-risk only; the caller (coordinator/src/merge.ts) enforces that. */
   merge(owner: string, repo: string, pr: number): Promise<{ merged: boolean; autoMerge: boolean }>;
 }

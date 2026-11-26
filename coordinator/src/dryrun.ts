@@ -21,7 +21,7 @@ import { GitWorkspace } from "./workspace/git.ts";
 export interface Fixture {
   product: string;
   owner: string;
-  issues: Pick<Issue, "number" | "title" | "labels" | "body">[];
+  issues: (Pick<Issue, "number" | "title" | "labels" | "body"> & { author?: string })[];
   scenarios: Scenarios;
   expected: Record<string, string>;
 }
@@ -78,7 +78,7 @@ async function runDeps(o: { maxHours: number; log?: (line: string) => void; now?
   const runner = new StubRunner(f.scenarios, (s) => {
     const inv = buildClaudeInvocation(s, loadRoleConfig(s.role), { baseBranch: cfg.base_branch, reportsDir: paths.reportsDir, guardLog: paths.guardLog });
     log(`  [dry-run] ${s.issue.repo}#${s.issue.number} ${s.stage}#${s.attempt}: would run (cwd ${inv.cwd}) ${inv.cmd} ${inv.args.join(" ")}`);
-  });
+  }, paths.guardLog);
   const deps: Deps = {
     cfg,
     gh,
