@@ -151,7 +151,7 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   repository, commits whose author or committer email is not a `users.noreply.github.com` address (or GitHub's
   own `noreply@github.com` for web merges); (2) it prints counts and short SHAs only, never the addresses; (3) it
   runs daily and reports in the digest; (4) it never changes history; remediation stays a human decision.
-- [ ] **BL-31 When a PR merges, check every other open factory PR and bring it up to date.** M, high. Source: FL-03 (review after resume-sg). URGENT (owner,
+- [ ] **BL-31 When a PR merges, check every other open factory PR and bring it up to date.** M, high. Source: FL-03, FL-26 (review after resume-sg). URGENT (owner,
   2026-11-26 14:45 SGT: the owner had to press Update branch by hand on #18 and #26). Deps: none.
   Principles: P-01, P-02. Owner, 2026-11-26 13:35 SGT; found in jd2cv-m1: resume-sg PR #18 (base-resume) went DIRTY
   when the design-system PR #22 merged, so its auto-merge could never happen; every UI issue adds keys to the same two
@@ -191,7 +191,7 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   any added `gitleaks:allow` comment and any change to `[allowlist]`/`[[allowlists]]` or a `.gitleaksignore` line, in
   hook mode and `--scan-git`; (2) the coordinator turns such a finding into risk:high with the reason "secret-scan
   allowlist change" (the PR waits for the owner) instead of failing verify; (3) cases and a mutation check.
-- [ ] **BL-36 QA test defects: let QA test against the builder's attempt, and allow two rewrites.** M, high. Deps:
+- [ ] **BL-36 QA test defects: let QA test against the builder's attempt, and allow two rewrites.** M, high. Source: FL-19 (review after resume-sg). Deps:
   none. Principles: P-02, P-06, P-08. Not adopted on 2026-11-26 16:12 SGT; the owner keeps it for the factory review
   after resume-sg. Evidence (jd2cv-m1): resume-sg #4, #25 and #13 escalated on defective QA tests (non-unique
   queries, `innerText` under `text-transform: uppercase`, an assertion the spec contradicts); one QA rewrite was not
@@ -201,7 +201,7 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   `MAX_TEST_REWRITES` 2, still counted per task; (3) the QA prompt rule: never select a control by position or as the
   only one of its role in a landmark; use its accessible name inside the feature's own region. Acceptance: dry-run tests
   for each, a mutation per behaviour, and the golden task.
-- [ ] **BL-37 A review finding about missing tests goes to QA, not to the builder.** S, high. Deps: none.
+- [ ] **BL-37 A review finding about missing tests goes to QA, not to the builder.** S, high. Source: FL-20 (review after resume-sg). Deps: none.
   Principles: P-02, P-06, P-08. Found in jd2cv-m1 (resume-sg#8, 2026-11-26 16:28 SGT): the code converged, but the
   reviewer failed three reviews on missing unit tests for one criterion; a review failure always goes back to impl, and
   the builder may not write tests, so the task escalated. Acceptance: (1) the reviewer may end with
@@ -211,12 +211,13 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
 
 ## From the coach's factory lessons and the D3 run, 2026-11-26 (written only, not built; review after resume-sg)
 
-Input: `/workspace/runs/plans/factory-review/factory-lessons-resume-sg.md` (coach, read on 2026-11-26 23:55 SGT; the
-file holds FL-01 to FL-14, not FL-28). Existing items that cover an FL item carry "Source: FL-xx" above. BL-50 to
+Input: `/workspace/runs/plans/factory-review/factory-lessons-resume-sg.md` (coach; FL-01 to FL-14 read on 2026-11-26 23:55 SGT,
+FL-15 to FL-28 on 2026-11-27 00:15 SGT after the coach replaced the file). FL-15 (71ab18c) and the verdict part of FL-27
+(2982a5f) are already fixed and need no BL item. Existing items that cover an FL item carry "Source: FL-xx" above. BL-50 to
 BL-52 come from the D3 escalations (`docs/failures.md`, 2026-11-26).
 
 - [ ] **BL-38 Duty officer: tiered authority so the owner decides in two short batches a day.** L, high. Deps: BL-41,
-  BL-14. Principles: P-11, G-02, G-07. Source: FL-01 (P0). Review after resume-sg. The coach's draft: T0 automatic
+  BL-14. Principles: P-11, G-02, G-07. Source: FL-01 (P0), FL-18 (the run-SHA approval joins the batch windows). Review after resume-sg. The coach's draft: T0 automatic
   (low-risk merge with green CI, Update branch, retries), T1 a read-only proxy plus an independent second review
   decides clarifications the spec already answers and medium-risk PRs (path allowlist, no new dependency, no network or
   storage change, tests present), T2 the owner approves in batches (high-risk PRs, scope changes), T3 only the owner
@@ -227,7 +228,7 @@ BL-52 come from the D3 escalations (`docs/failures.md`, 2026-11-26).
   (5) metrics in the digest: owner interruptions per day, owner minutes, queue time idle waiting for the owner, proxy
   decisions overturned.
 - [ ] **BL-39 Schedule by the dependency graph; never idle while a high-risk PR waits.** M, low. Deps: none.
-  Principles: P-01, P-07. Source: FL-02 (P0). Review after resume-sg. On 2026-11-26 the operator did this by hand
+  Principles: P-01, P-07. Source: FL-02 (P0), FL-17. Review after resume-sg. On 2026-11-26 the operator did this by hand
   (owner's 20:30 SGT rule). Acceptance: (1) the queue loops until its time budget, re-reading issues after each task;
   (2) it sets `factory:ready` itself on an issue whose `Depends-on` issues are all closed by a merged PR (the only label
   move it adds); (3) a needs-human PR never blocks tasks that do not depend on it; (4) the merge wait applies only to
@@ -238,7 +239,7 @@ BL-52 come from the D3 escalations (`docs/failures.md`, 2026-11-26).
   container can be written by any process); (2) accepted packs move to `runs/inbox/accepted/` with a log line; others
   are reported, never acted on; (3) tests for a signed, an unsigned and a tampered pack.
 - [ ] **BL-41 Public status file with an issue summary, for the coach.** S, low. Deps: none. Principles: P-06, R-05.
-  Source: FL-04 item 2, FL-05 (P1, P2). Review after resume-sg. Acceptance: (1) after every stage the coordinator
+  Source: FL-04 item 2, FL-05 (P1, P2), FL-25 (status part; see BL-59). Review after resume-sg. Acceptance: (1) after every stage the coordinator
   writes `status.json` (task, stage, attempt, outcome, PR link, open issues with their factory labels, cost) to a public
   location the coach reads with git; (2) no private data: no email addresses, no tokens, no report text, checked by
   secret-guard and a test; (3) no new credential for the coach.
@@ -295,6 +296,48 @@ BL-52 come from the D3 escalations (`docs/failures.md`, 2026-11-26).
   Source: FL-14 (P2). Review after resume-sg. Acceptance: the runbook's session start is: clear context, one
   self-contained message, then "check GitHub (issues, PRs, labels) and runs/events.jsonl first; never redo work that is
   already there".
+
+- [ ] **BL-54 A later spec names the earlier rules and tests it replaces.** S, low. Deps: BL-45. Principles: P-03,
+  G-04. Source: FL-16, FL-17 (P0). Review after resume-sg. Evidence: #13 (Certificates and Languages), #42 (an older
+  e2e test expected the zh sub-label the new issue removes). Acceptance: (1) spec rules carry numbers, and a later
+  spec says "replaces <spec> rule N"; (2) when an issue changes behaviour an earlier issue tested, the draft lists the
+  affected existing tests and says which spec wins, as a "Tests must change:" line; (3) the draft check of BL-51 greps
+  the tests for the strings and selectors the issue removes or renames and lists the hits.
+- [ ] **BL-55 Screenshots reach the PR.** S, high (CI). Deps: none. Principles: G-01, P-11. Source: FL-21 (P1).
+  Review after resume-sg. Evidence: the #33 comparison screenshots stayed in the worktree's `test-results/`.
+  Acceptance: (1) the e2e job uploads `test-results/**/*.png` as a workflow artifact; (2) the coordinator links the
+  artifact in the PR body; (3) a visual high-risk PR without screenshots fails the pr stage with a clear reason.
+- [ ] **BL-56 Spec template: a principle-to-check table for every direction.** S, low. Deps: BL-45. Principles:
+  P-12, G-01. Source: FL-22 (P0). Review after resume-sg. Evidence: v5.2 section 4 did not check skills, project tech,
+  languages or contact details. Acceptance: the template has a table mapping each core product principle (add nothing,
+  lose nothing, translation) to at least one testable check, with a column each for same language, zh to en and en to
+  zh; the planning checklist refuses a spec with an empty cell.
+- [ ] **BL-57 Every spec rule carries a worked example per direction.** S, low. Deps: BL-56. Principles: G-01, G-04.
+  Source: FL-23 (P0). Review after resume-sg. Evidence: the 17:20 cross-language rule failed on zh to en, the main use
+  case (#36, fixed by #38). Acceptance: each rule has one hand-worked example per direction, walked through by the coach
+  or a reviewer before issues are split; the issue quotes the examples, and QA turns each into a test.
+- [ ] **BL-58 QA and the reviewer flag a spec that defeats the product goal.** S, high (role prompts). Deps: none.
+  Principles: G-04, G-05, P-02. Source: FL-24 (P0). Review after resume-sg. Evidence: the #36 fixture kept company and
+  title in Chinese in an English resume so that the tests would pass. Acceptance: (1) `roles/qa.md` and
+  `roles/reviewer.md` add: when a direct consequence of the spec contradicts the product goal of the brief, end with
+  `Spec-conflict: <rule> <consequence>`; (2) the coordinator escalates such a task with that line as the reason
+  (no rewrite budget used); (3) golden task with a planted conflict.
+- [ ] **BL-59 A brief progress table: requirement, issue, status, where to see it.** S, low. Deps: BL-41. Principles:
+  P-06, G-02. Source: FL-25 (P1). Review after resume-sg. Evidence: at 19:51 the owner looked for the approved new flow
+  on the site while tailor-flow had not started. Acceptance: (1) every brief gets a table of its items with issue, status
+  and the page or route where a merged item can be seen; (2) the coordinator updates the status column in
+  `status.json` (BL-41); (3) the coach states, with each approval, when the change will be visible.
+- [ ] **BL-60 Headless roles may not start background subagents or monitors.** S, high (role settings). Deps: none.
+  Principles: P-01, G-01. Source: FL-27 (P1; the verdict bug itself is fixed in 2982a5f). Review after resume-sg.
+  Acceptance: (1) the role front matter adds the subagent and monitor tools to `disallowed_tools` by default, with an
+  explicit per-role opt-in; (2) the role prompts say: wait for every background task before the verdict; (3) a unit
+  test over the assembled flags and the golden task.
+- [ ] **BL-61 Run days close out like build days.** S, low (process). Deps: none. Principles: P-02, P-06. Source:
+  FL-28 (P0). Review after resume-sg. Evidence: D3 ran a whole day with no failures entries or run report until the
+  owner asked at 23:41; factory/v1.3 is far ahead of main. Acceptance: (1) the runbook has a run-day checklist: each
+  escalation or human intervention goes to `docs/failures.md` the same day, a run report at the end of each run window,
+  new lessons become BL items with their FL source; (2) the factory branch is proposed for merge every one to two
+  days; (3) the digest shows "failures entries written today" next to "escalations today".
 
 ## Needs live sessions or the human
 
