@@ -8,6 +8,7 @@ import { parseCsv } from "../src/runs-csv.ts";
 import { testDefectOf } from "../src/runner/claude.ts";
 import { MAX_TEST_REWRITES, transition } from "../src/state.ts";
 import { parseFactoryConfig } from "../src/config.ts";
+import { GitWorkspace } from "../src/workspace/git.ts";
 import { dryRun } from "./helpers.ts";
 
 function rowsOf(file: string, task: string): { stage: string; role: string; outcome: string }[] {
@@ -89,6 +90,21 @@ describe("Test-defect: the builder can send a defective test back to QA once", (
     expect(r.digest.escalated.map((d) => d.task)).toEqual(["resume-sg#202"]);
     const rows = rowsOf(r.paths.runsCsv, "resume-sg#202").filter((x) => x.role !== "coordinator");
     expect(rows.map((x) => x.stage)).toEqual(["tests", "impl", "tests", "impl", "impl"]);
+  });
+});
+
+describe("push authenticates with the gh token, other git calls do not get it", () => {
+  it("push runs as kind gh, status and fetch as kind git", async () => {
+    const kinds: string[] = [];
+    const fake: Exec = async (_cmd, args, opts) => {
+      kinds.push(`${args[0] ?? ""}:${opts?.kind ?? ""}`);
+      return { code: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const ws = new GitWorkspace(fake, { repoDir: "/tmp/r", worktreesDir: "/tmp/w", baseBranch: "main", remote: "origin" });
+    await ws.push("/tmp/w/x", "factory/x-1");
+    await ws.changedFiles("/tmp/w/x");
+    await ws.filesChangedFromBase("/tmp/w/x");
+    expect(kinds).toEqual(["push:gh", "status:git", "diff:git"]);
   });
 });
 
