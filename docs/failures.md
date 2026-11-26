@@ -275,3 +275,21 @@ Template:
   test first.
 - Issue: https://github.com/humyna-labs/resume-sg/issues/11, harness-fix https://github.com/humyna-labs/factory/issues/16
   PR: none
+
+## 2026-11-27 After the owner's 00:00 restarts: two more second wrong tests, and an origin check QA could not loosen
+- Symptom: #11 page-fit escalated at 00:52 SGT (988 unit tests and 150 of 151 e2e pass), #41 flow-wizard at 01:08
+  SGT (992 of 998 unit tests pass), #44 templates-polish at 01:17 SGT (code done, gates passed). #42 ui-polish
+  passed and auto-merged (PR #45) after its "Tests must change" line.
+- Root cause: #11 and #41: the same class as the 2026-11-26 entry "Second wrong QA test with no rewrite left": QA
+  fixed the first wrong test, and the next ones (#11: an e2e bullet count that includes the certificates the
+  template also draws as bullets; #41: a double click on a button that the first click removes, a Generate query
+  on step 2, a tabindex rule that rules out the heading focus criterion 10 requires) had no QA re-run left. #44: the
+  review found a missing e2e case; the builder sent it to QA, QA built the case through a mocked AI call, and its
+  one-line exemption for that call in the test's origin check was refused by auto mode as weakening oversight; a
+  tests-stage failure escalates at once.
+- Principle: P-02, G-05 (QA did not route around the refusal).
+- Fix: none tonight (owner: post the finding and move on). The builders' lists are on the issues. BL-36 and BL-37
+  stay for the factory review.
+- Issue: https://github.com/humyna-labs/resume-sg/issues/11, https://github.com/humyna-labs/resume-sg/issues/41,
+  https://github.com/humyna-labs/resume-sg/issues/44, harness-fix https://github.com/humyna-labs/factory/issues/18
+  PR: https://github.com/humyna-labs/resume-sg/pull/45 (#42, merged)
