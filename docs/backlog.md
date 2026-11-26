@@ -151,14 +151,19 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   repository, commits whose author or committer email is not a `users.noreply.github.com` address (or GitHub's
   own `noreply@github.com` for web merges); (2) it prints counts and short SHAs only, never the addresses; (3) it
   runs daily and reports in the digest; (4) it never changes history; remediation stays a human decision.
-- [ ] **BL-31 Refresh open factory PRs when the base moves.** M, high. Deps: none. Principles: P-01, P-02.
-  Found in jd2cv-m1: every UI issue adds keys to the same two i18n dictionaries, so open PRs (high-risk ones wait
-  for the owner) go DIRTY when another PR merges; the queue's merge wait (v1.3) covers only low-risk auto-merges.
-  Acceptance: (1) the coordinator detects an open factory PR whose `mergeStateStatus` is DIRTY or BEHIND; (2) it
-  merges `origin/main` into the branch in the worktree; a clean merge re-runs verify (and review when the diff
-  changed) and pushes; (3) a conflict sends the task back to impl with the conflicting paths as the previous
-  failure, so the builder resolves it in `src/` (QA in `tests/`); (4) never force-pushes over a human's commits;
-  (5) dry-run tests with a fake remote for clean, conflicting and behind cases.
+- [ ] **BL-31 When a PR merges, check every other open factory PR and bring it up to date.** M, high. Deps: none.
+  Principles: P-01, P-02. Owner, 2026-11-26 13:35 SGT; found in jd2cv-m1: resume-sg PR #18 (base-resume) went DIRTY
+  when the design-system PR #22 merged, so its auto-merge could never happen; every UI issue adds keys to the same two
+  i18n dictionaries, so this recurs. The queue merge wait (v1.3) only orders low-risk auto-merges. Acceptance:
+  (1) after every merge it sees (its own auto-merges, and the owner's merges of high-risk PRs, found by polling), the
+  coordinator lists every other open factory PR and reads its `mergeStateStatus`; (2) BEHIND, or a clean merge of
+  `origin/main` into the branch: merge in the task worktree, re-run verify (and review when the merged diff touches the
+  PR's files), push, keep the PR and its auto-merge; (3) DIRTY: send the task back to impl with the conflicting paths as
+  the previous failure, so the builder re-applies its change on the fresh base (QA for `tests/` conflicts), then the
+  normal stages and the same PR; (4) never force-push over a commit it did not make, never touch a PR that is not a
+  factory branch; (5) a high-risk PR still needs the owner's approval after the update (record whether the ruleset
+  dismisses stale approvals); (6) dry-run tests with a fake remote for clean, behind and conflicting cases, and one
+  live check on the next conflict.
 
 ## Needs live sessions or the human
 
