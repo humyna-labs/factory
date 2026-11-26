@@ -201,6 +201,13 @@ Size: S (under 2 h), M (one overnight window), L (several windows). Every item c
   `MAX_TEST_REWRITES` 2, still counted per task; (3) the QA prompt rule: never select a control by position or as the
   only one of its role in a landmark; use its accessible name inside the feature's own region. Acceptance: dry-run tests
   for each, a mutation per behaviour, and the golden task.
+- [ ] **BL-37 A review finding about missing tests goes to QA, not to the builder.** S, high. Deps: none.
+  Principles: P-02, P-06, P-08. Found in jd2cv-m1 (resume-sg#8, 2026-11-26 16:28 SGT): the code converged, but the
+  reviewer failed three reviews on missing unit tests for one criterion; a review failure always goes back to impl, and
+  the builder may not write tests, so the task escalated. Acceptance: (1) the reviewer may end with
+  `Test-gap: <criterion> <what is untested>` lines; (2) the coordinator then sends the task to the tests stage (QA adds
+  the tests, red check against the current code allows already-passing new tests only for a Test-gap), then impl and the
+  normal stages, counted with BL-36's rewrite budget; (3) a stub-runner flow test and a mutation check.
 
 ## Needs live sessions or the human
 
