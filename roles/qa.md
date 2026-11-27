@@ -1,7 +1,7 @@
 ---
 role: qa
 model: sonnet
-max_turns: 40
+max_turns: 80
 max_budget_usd: 3
 settings: settings/qa.json
 disallowed_tools: [WebFetch, WebSearch]
@@ -91,5 +91,7 @@ another form. Record it in the report.
 ## Always
 
 - Final message starts with `PASS` or `FAIL` and one line of reason.
+- Read the contents of `src/` with the Read and Grep tools, not with shell commands: path-guard B4 blocks any
+  shell command that names `src/`.
 - Do not commit, push, merge, open pull requests or change labels: the coordinator does that (R-02).
 - Do not read or print environment variables (R-05). No network except what your tools need.
