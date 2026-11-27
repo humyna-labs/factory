@@ -293,3 +293,35 @@ Template:
 - Issue: https://github.com/humyna-labs/resume-sg/issues/11, https://github.com/humyna-labs/resume-sg/issues/41,
   https://github.com/humyna-labs/resume-sg/issues/44, harness-fix https://github.com/humyna-labs/factory/issues/18
   PR: https://github.com/humyna-labs/resume-sg/pull/45 (#42, merged)
+
+## 2026-11-27 Reviewed fixes 2982a5f and 71ab18c missed F11 and F12 of the external review
+- Symptom: the external review of factory/v1.3 (0fac327) found two HIGH defects in code the coach had reviewed and
+  passed and the owner had approved to run. F11 (2982a5f, `coordinator/src/runner/claude.ts` `summarizeStream`):
+  once a verdict is seen, later result events that do not start with PASS or FAIL are skipped with their `is_error`
+  and `subtype`, so a PASS followed by an `error_max_turns` event is a pass; and `PASS is not warranted; tests
+  failed` matches the verdict pattern. F12 (71ab18c, Test-defect routing): any text after `Test-defect:` counts,
+  and the flag survives when the coordinator itself finds unauthorized writes or an invalid report, so the builder
+  can send a task back to QA without a real defect.
+- Root cause: both fixes were written by the operator and reviewed by the coach against the run that had failed
+  (#11's two result events; #41's list of defects) and their unit tests, not against a hostile or out-of-order
+  event stream or a builder that lies. Live example the same day: #41's review attempt 3 (11:16 SGT) emitted a
+  second result event after its verdict, "PASS: this review already finished, so nothing changed; ...", which the
+  parser took as the verdict; harmless only because the real verdict was also PASS.
+- Principle: G-01 (a check passes only when it is run), P-02.
+- Fix: F11 and F12 in docs/backlog.md, Batch 1 (v1.3.1), with the review's two-event stream and example as tests.
+  Lesson (coach): a parser review must try a hostile or out-of-order event stream, not only the run that failed.
+- Issue: none (external review `/workspace/runs/plans/factory/v1.3-review/codex-review-factory-v1.3.md`)
+  PR: https://github.com/humyna-labs/factory/pull/6 (not merged until Batch 1 is done)
+
+## 2026-11-27 resume-sg#47 result-fixes: QA ran out of turns, third time for this class
+- Symptom: escalated at 11:27 SGT on b3a59f5 at the tests stage: QA ran 41 turns (`error_max_turns`, limit 40) and
+  ended before writing its report, so the stage failed with "report missing"; a tests-stage failure escalates at
+  once. Cost USD 1.96. Earlier the same day #41 flow-wizard, restarted on b3a59f5, used its first QA rewrite and
+  reached the owner as PR #50.
+- Root cause: the same class as #41 (2026-11-26 22:45) and #11 (2026-11-27 08:14): a large issue (nine criteria
+  plus test notes) and turns spent on commands path-guard B4 blocks (6 blocked actions, the last a `grep` of
+  `src/i18n/`).
+- Principle: P-12 (split large issues), P-02.
+- Fix: open; queue stopped under the same-failure rule. Owner to choose: QA turn budget (BL-52) or split the issue.
+- Issue: https://github.com/humyna-labs/resume-sg/issues/47
+  PR: none
