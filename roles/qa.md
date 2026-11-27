@@ -2,7 +2,7 @@
 role: qa
 model: sonnet
 max_turns: 80
-max_budget_usd: 3
+max_budget_usd: 6
 settings: settings/qa.json
 disallowed_tools: [WebFetch, WebSearch]
 writes: ["tests/**", "evals/**"]
