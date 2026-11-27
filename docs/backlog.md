@@ -343,6 +343,73 @@ BL-52 come from the D3 escalations (`docs/failures.md`, 2026-11-26).
   new lessons become BL items with their FL source; (2) the factory branch is proposed for merge every one to two
   days; (3) the digest shows "failures entries written today" next to "escalations today".
 
+## External review of factory/v1.3 (2026-11-27; written only, not built)
+Source: the external review of factory/v1.3 at 0fac327 (15 findings, REQUEST CHANGES; model from another vendor, on
+an uploaded archive), `/workspace/runs/plans/factory/v1.3-review/codex-review-factory-v1.3.md`, and the coach's
+triage `factory-codex-triage-v1.3.md` in the same folder. Owner decision 2026-11-27 10:00 SGT (recommendation A):
+the resume-sg queue keeps running on b3a59f5 with the risk written down (no third-party content reaches the agents
+today); PR #6 (v1.3) is not merged into main until Batch 1 is done; Batch 2 is the core of v1.4 (L4), after the
+resume-sg launch and before the factory is open-sourced. IDs are the review's F numbers; F01b to F01e are additions
+from the operator's container answer of 2026-11-27 10:45 SGT (owner, 11:30 SGT).
+
+### Batch 1 (v1.3.1): small code fixes at the next idle point between tasks, never mid-task
+Owner, 11:30 SGT: do it tonight when the queue is empty; list the plan for the owner first; after the work, the
+coach reviews it before any "approved to run <sha>".
+- [ ] **F04 No force pushes.** S, high. Drop `--force-with-lease`; pre-push rejects non-fast-forward updates; a
+  restarted task pushes to a new branch `factory/<product>-<n>-r<k>`. Test: a divergent update is rejected; a
+  restart uses `-r2`.
+- [ ] **F07 Scope check sees the rename source.** S, high. `changedFiles` checks the source of a rename too (or uses
+  `--no-renames`). Test: `R  src/x.ts <- tests/y.ts` is out of scope for the builder.
+- [ ] **F08 No quoted file names in the risk check.** S, high. `filesChangedFromBase` uses
+  `git diff --no-renames --name-only -z`. Test: a non-ASCII path under a high-risk directory is high risk.
+- [ ] **F09 Instruction files denied at any depth.** S, high. R3 denies `CLAUDE.md`, `AGENTS.md`, `.gitignore`,
+  `.claude/`, `settings/`, `hooks/`, `.githooks/`, `scripts/` at any depth, before the role allow rules. Test:
+  `src/CLAUDE.md` and `tests/.gitignore` are denied (added to the mutation fixtures).
+- [ ] **F11 A later session error fails the stage.** S, high. Track errors apart from the verdict: any later result
+  event with `is_error` fails the stage; the verdict must match `^(PASS|FAIL)(:|\s*$)` on the first line. Test: the
+  two-event stream of the review fails; "PASS is not warranted" is not a pass. (Missed in the reviews of 2982a5f;
+  see docs/failures.md 2026-11-27.)
+- [ ] **F12 Test-defect claims do not override independent failures.** S, high. Drop the Test-defect flag when the
+  scope, report or session checks fail on their own; a defect must name an existing `tests/` file and line. Test:
+  the review's example goes to the builder failure policy, not to QA. (Missed in the reviews of 71ab18c.)
+- [ ] **F01a Verify stage stages only what it owns.** S, high. The verify stage stages `feature_list.json` only,
+  never `git add -A`; after every gate `git status` shows no change outside what the stage allows, else escalate.
+  Test: a test that writes `src/x.ts` during the gate escalates.
+- [ ] **F01b The factory checkout is unchanged after every gate.** S, high. After every gate, `git status` of
+  `/workspace/factory` (the run checkout: coordinator, hooks, roles, settings) must be clean and HEAD must still be
+  the approved SHA, else the task escalates with the changed paths. Why: gates run as uid 1000 with `/workspace`
+  mounted read-write, so a test can edit the factory's own code and hooks. Test: a gate that touches
+  `hooks/path-guard.sh` in a fixture factory checkout escalates.
+- [ ] **F13 The red gate needs a complete run.** S, high. Reject timeouts and abnormal exits before looking for
+  failures. Test: a timed-out run with a failure summary is not a valid red.
+- [ ] **F15 Repair a truncated event line.** S, high. Before appending, repair a truncated last line of
+  `events.jsonl`. Test: a partial line does not swallow the next event.
+- [ ] **F03 Pre-push scans every outgoing commit.** S, high. `gitleaks` over `base..HEAD`, not only the tree. Test: a
+  token added and then removed blocks the push.
+
+### Batch 2 (v1.4 / L4): after the resume-sg launch, before open-sourcing
+- [ ] **F01/F02 Gates and agent tools in a separate sandbox.** L, high. Candidate code read-only, no token, no
+  network, narrow writable temp dirs; read-path rules for `.env`, PII maps and `data/private` enforced by the mount,
+  not by command patterns.
+- [ ] **F01c Gates and tests run as another user.** M, high. Run gates and tests as a user that cannot read other
+  processes' environment (today every process is uid 1000, so a test can read `/proc/<pid>/environ` of the
+  coordinator, the tmux sessions and the Claude sessions, which hold `GH_TOKEN`, `FACTORY_GH_TOKEN`,
+  `CLAUDE_CODE_OAUTH_TOKEN` and the Telegram tokens), and cannot read the 0600 files of `node`
+  (`~/.claude/.credentials.json`, `~/.claude.json`, `~/.claude/channels/telegram/.env`).
+- [ ] **F01d Credentials the factory does not use leave the container.** S, high. Move `~/.codex/auth.json` (the
+  `agent-factory_codex-config` volume) out of the container while Codex is not part of a run.
+- [ ] **F01e No long-lived tokens in process environments.** M, high. The bot token is not kept in the environment
+  of long-running processes (start-sessions, tmux, the coordinator, the Claude sessions); a short-lived token is
+  fetched for the one `gh` or `git push` call that needs it.
+- [ ] **F05 A rerun resets auto-merge.** M, high. On a rerun, look up the PR first, disable auto-merge, refresh body
+  and labels, and re-enable only after the new decision.
+- [ ] **F06 Resume checks commits, not labels.** M, high. Completed-stage events record the HEAD SHA; resume checks
+  it; restart is idempotent.
+- [ ] **F10 Grants bound to the task revision.** M, high. A task authorization snapshot (issue revision, risk,
+  grants, candidate SHA); a change forces a restart.
+- [ ] **F14 PR state survives an interruption.** S, high. Persist the PR number, URL, SHA and auto-merge state in the
+  stage event; restore them on resume.
+
 ## Needs live sessions or the human
 
 - [ ] **BL-11 First live task on resume-sg with the claude runner.** M, high. Deps: H-01, H-02, v1 tag, H-03. Principles: P-04, P-10.
