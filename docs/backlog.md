@@ -378,6 +378,11 @@ coach reviews it before any "approved to run <sha>".
 - [x] **F12 Test-defect claims do not override independent failures.** S, high. Drop the Test-defect flag when the
   scope, report or session checks fail on their own; a defect must name an existing `tests/` file and line. Test:
   the review's example goes to the builder failure policy, not to QA. (Missed in the reviews of 71ab18c.)
+  Follow-up (owner, 2026-11-28 23:54 SGT; resume-sg#21): the location is `<test file>:N` or `<test file>:N-M`, with
+  N <= M, both lines inside the file, a range of at most 30 lines (MAX_DEFECT_RANGE), and a regular file under tests/;
+  roles/builder.md shows both forms. #21's builder wrote "tests/unit/sample-mode.test.tsx:209-212" in attempts 1 and 2;
+  the single-line pattern dropped both claims and the task went back to the builder twice. Test:
+  coordinator/test/defect-lines.test.ts.
 - [x] **F01a Verify stage stages only what it owns.** S, high. The verify stage stages `feature_list.json` only,
   never `git add -A`; after every gate `git status` shows no change outside what the stage allows, else escalate.
   Test: a test that writes `src/x.ts` during the gate escalates.
@@ -429,6 +434,11 @@ coach reviews it before any "approved to run <sha>".
   factory checkout; a gate process can still write other directories under /workspace (for example `runs/plans/`,
   other worktrees, the run ledger). Solved by the isolated sandbox of F01/F02 (the gate sees only its task worktree
   and a temp dir, writable), not by more after-the-fact checks.
+- [ ] **F17 Builder attempts follow QA rewrites, with a hard total.** S, high. Owner, 2026-11-28 23:54 SGT (written
+  only, not built; resume-sg#21): each QA rewrite after a test defect gives the builder one more attempt, and the
+  builder runs at most 5 times per task in total; `state.ts` checks both explicitly. Today a test defect goes back to
+  QA before the attempt limit is checked (`state.ts`: the testDefect branch comes first) and the impl stage after a
+  rewrite never checks it, so #21's builder ran 4 times with max_impl_attempts 3.
 - [ ] **FL-43 A restart refuses to start while a test changed on both sides is unlisted.** S, low. Owner, 2026-11-28
   22:30 SGT (written only, not built; resume-sg#49): on a restart the coordinator computes the tests changed both on
   main since the previous run's base and on the previous task branch, `comm -12 <(git diff --name-only <base>
