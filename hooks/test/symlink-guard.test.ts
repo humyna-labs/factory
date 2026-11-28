@@ -47,7 +47,7 @@ function layout(mutate?: Mutate) {
   const s = mkdtempSync(join(tmpdir(), "factory-symlink-layout-"));
   mkdirSync(join(s, "hooks"));
   mkdirSync(join(s, ".githooks"));
-  for (const f of ["hooks/symlink-guard.sh", ".githooks/pre-push"]) {
+  for (const f of ["hooks/symlink-guard.sh", ".githooks/pre-push", "hooks/secret-guard.sh"]) {
     let text = readFileSync(join(ROOT, f), "utf8");
     if (mutate?.file === f) {
       const re = new RegExp(`^(\\s*)# RULE ${mutate.id} begin[\\s\\S]*?# RULE ${mutate.id} end\\s*$`, "m");
@@ -80,6 +80,33 @@ const CASES: Case[] = [
       mkdirSync(join(x.dir, ".git", "refs", "remotes", "origin"), { recursive: true });
       writeFileSync(join(x.dir, ".git", "refs", "remotes", "origin", "bad"), `${"3".repeat(40)}\n`);
       return push(r, x.dir, x.sha).status ?? -1;
+    },
+    1,
+  ],
+  [
+    "pre-push: a token added and removed again in the outgoing commits blocks the push (P6, F03)",
+    (r) => {
+      const x = repo(false);
+      // built at run time so the factory repo itself never contains a token-shaped string
+      writeFileSync(join(x.dir, "cfg.txt"), `token ${["ghp", "a1B2".repeat(9)].join("_")}\n`);
+      x.git("add", "-A");
+      x.git("commit", "-q", "-m", "add\n\nAgent-Role: builder");
+      writeFileSync(join(x.dir, "cfg.txt"), "token removed\n");
+      x.git("add", "-A");
+      x.git("commit", "-q", "-m", "remove\n\nAgent-Role: builder");
+      return push(r, x.dir, x.git("rev-parse", "HEAD").stdout.trim()).status ?? -1;
+    },
+    1,
+  ],
+  [
+    "pre-push: a secret guard that is missing fails closed (P6, F03)",
+    (r) => {
+      const x = repo(false);
+      const s = mkdtempSync(join(tmpdir(), "factory-noguard-"));
+      mkdirSync(join(s, "hooks"));
+      mkdirSync(join(s, ".githooks"));
+      for (const f of ["hooks/symlink-guard.sh", ".githooks/pre-push"]) writeFileSync(join(s, f), readFileSync(join(r, f), "utf8"), { mode: 0o755 });
+      return push(s, x.dir, x.sha).status ?? -1;
     },
     1,
   ],
@@ -175,7 +202,7 @@ describe("symlink guard (W2-03)", () => {
   it("the factory repo itself has no tracked symlink", () => {
     expect(scan(ROOT, ROOT, "--scan-git").status).toBe(0);
   });
-  it.each(["hooks/symlink-guard.sh:L1", "hooks/symlink-guard.sh:L2", "hooks/symlink-guard.sh:L3", ".githooks/pre-push:P1", ".githooks/pre-push:P2", ".githooks/pre-push:P3", ".githooks/pre-push:P4", ".githooks/pre-push:P5"])("mutation: disabling %s makes a case fail", (spec) => {
+  it.each(["hooks/symlink-guard.sh:L1", "hooks/symlink-guard.sh:L2", "hooks/symlink-guard.sh:L3", ".githooks/pre-push:P1", ".githooks/pre-push:P2", ".githooks/pre-push:P3", ".githooks/pre-push:P4", ".githooks/pre-push:P5", ".githooks/pre-push:P6"])("mutation: disabling %s makes a case fail", (spec) => {
     const [file, id] = spec.split(":") as [Mutate["file"], string];
     const s = layout({ file, id });
     const failing = CASES.filter(([, f, want]) => f(s) !== want);
@@ -184,7 +211,7 @@ describe("symlink guard (W2-03)", () => {
   it("every rule block in both files is in the mutation list above", () => {
     const ids = (f: string) => [...readFileSync(join(ROOT, f), "utf8").matchAll(/^\s*# RULE ([A-Z][0-9]+) begin/gm)].map((m) => m[1]);
     expect(ids("hooks/symlink-guard.sh")).toEqual(["L1", "L3", "L2"]);
-    expect(ids(".githooks/pre-push")).toEqual(["P4", "P5", "P2", "P3", "P1"]);
+    expect(ids(".githooks/pre-push")).toEqual(["P4", "P5", "P2", "P3", "P1", "P6"]);
   });
 });
 

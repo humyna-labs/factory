@@ -390,8 +390,10 @@ coach reviews it before any "approved to run <sha>".
   failures. Test: a timed-out run with a failure summary is not a valid red.
 - [x] **F15 Repair a truncated event line.** S, high. Before appending, repair a truncated last line of
   `events.jsonl`. Test: a partial line does not swallow the next event.
-- [ ] **F03 Pre-push scans every outgoing commit.** S, high. `gitleaks` over `base..HEAD`, not only the tree. Test: a
-  token added and then removed blocks the push.
+- [x] **F03 Pre-push scans every outgoing commit.** S, high. `gitleaks` over `base..HEAD`, not only the tree. Test: a
+  token added and then removed blocks the push. Owner, 2026-11-28: no gitleaks in the container; pre-push rule P6 runs
+  the added lines of every outgoing commit through `hooks/secret-guard.sh --stdin` and fails closed if the scanner is
+  missing or cannot run. CI keeps gitleaks.
 - [x] **F16 The fail-first check runs on the task baseline plus the new tests.** S, high. Owner, 2026-11-28
   (resume-sg#48): after a QA rewrite the red check ran on the task worktree, which already held a committed builder
   attempt, so every test passed ("tests do not fail first"). `ShellGates.red` now creates a temporary worktree at

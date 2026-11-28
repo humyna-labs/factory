@@ -11,6 +11,7 @@ MAX_FILES_PER_COMMIT=${FACTORY_MAX_FILES_PER_COMMIT:-40}
 url=${2:-}
 zero=0000000000000000000000000000000000000000
 SYMLINK_GUARD="$(cd "$(dirname "$0")/.." && pwd)/hooks/symlink-guard.sh"
+SECRET_GUARD="$(cd "$(dirname "$0")/.." && pwd)/hooks/secret-guard.sh"
 
 fail() { printf 'pre-push: REJECTED: %s\n' "$1" >&2; exit 1; }
 
@@ -64,6 +65,21 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     "$SYMLINK_GUARD" --commits -n 1 "$c" || fail "commit ${c} contains a symlink or could not be inspected (W2-03); replace it with a regular file"
   done
   # RULE P1 end
+  # RULE P6 begin  (F03, owner 2026-11-28: every outgoing commit's added lines go through secret-guard.sh, so a
+  # token added and removed again still blocks the push. No gitleaks in the container; CI keeps gitleaks. A
+  # scanner that cannot run fails closed.)
+  [ -x "$SECRET_GUARD" ] || fail "secret guard missing at ${SECRET_GUARD}; failing closed"
+  for c in $commits; do
+    added=$(git show --no-color --no-ext-diff --format= --unified=0 --diff-merges=first-parent "$c") || fail "cannot read the changes of ${c}; failing closed"
+    sg_rc=0
+    sg_err=$(printf '%s\n' "$added" | grep '^+' | grep -v '^+++ ' | "$SECRET_GUARD" --stdin 2>&1 >/dev/null) || sg_rc=$?
+    case "$sg_rc" in
+      0) ;;
+      2) fail "commit ${c} adds a secret (${sg_err%%$'\n'*}); remove it from the history before pushing" ;;
+      *) fail "secret guard could not scan ${c} (exit ${sg_rc}); failing closed" ;;
+    esac
+  done
+  # RULE P6 end
   for c in $commits; do
     msg=$(git log -1 --format=%B "$c") || fail "cannot read the message of ${c}; failing closed"
     if printf '%s' "$msg" | LC_ALL=C grep -q '[^ -~[:space:]]'; then fail "commit ${c} message is not ASCII"; fi
