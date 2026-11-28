@@ -8,9 +8,9 @@ import type { RoleResult, RoleRunner, RoleSession } from "./types.ts";
 /** pass: do the job. fail: report failure. no-report: do the job but skip the report.
  *  out-of-scope: also write a file the role may not write.
  *  hang-once: the first time, hang until the process is killed (resume test, W2-06); later, pass.
- *  test-defect: fail and name a defective test (builder, jd2cv-m1).
+ *  test-defect: fail and name a defective test (builder, jd2cv-m1). defect-range: the same with a line range (resume-sg#21).
  *  blocked-once: one hook denial, seen both in guard.log and in the session result; then pass. */
-export type StubStep = "pass" | "fail" | "no-report" | "out-of-scope" | "hang-once" | "test-defect" | "blocked-once" | "defect-out-of-scope" | "defect-missing-file";
+export type StubStep = "pass" | "fail" | "no-report" | "out-of-scope" | "hang-once" | "test-defect" | "blocked-once" | "defect-out-of-scope" | "defect-missing-file" | "defect-range";
 export type Scenario = Partial<Record<Role | "verify" | "red", StubStep[]>> & { changes?: string[] };
 export type Scenarios = Record<string, Scenario>;
 
@@ -81,6 +81,7 @@ export class StubRunner implements RoleRunner {
     }
     if (step === "test-defect") return { ok: false, turns: 1, costUsd: 0, blockedActions: 0, summary: `stub ${s.role} found a test defect`, testDefect: `tests/unit/${slug}.test.ts:1 contradicts AC1` };
     if (step === "defect-out-of-scope") return { ok: false, turns: 1, costUsd: 0, blockedActions: 0, summary: `stub ${s.role} edited a test and claims a defect`, testDefect: `tests/unit/${slug}.test.ts:1 contradicts AC1` };
+    if (step === "defect-range") return { ok: false, turns: 1, costUsd: 0, blockedActions: 0, summary: `stub ${s.role} found a test defect over a line range`, testDefect: `tests/unit/${slug}.test.ts:1-2 contradicts AC1` };
     if (step === "defect-missing-file") return { ok: false, turns: 1, costUsd: 0, blockedActions: 0, summary: `stub ${s.role} claims a defect in a file that does not exist`, testDefect: "tests/unit/nope.test.ts:3 contradicts AC1" };
     if (step === "blocked-once" && this.guardLog) {
       mkdirSync(dirname(this.guardLog), { recursive: true });

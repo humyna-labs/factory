@@ -58,7 +58,14 @@ line per defect in the final message (list every defect you found; QA gets all o
 
 ```
 Test-defect: <test file>:<line> <which criterion it contradicts, and why no src/ change can pass it>
+Test-defect: <test file>:<first>-<last> <which criterion it contradicts, and why no src/ change can pass it>
 ```
+
+The location has one of these two forms, for example `tests/unit/x.test.tsx:212` or
+`tests/unit/x.test.tsx:209-212`. The file is under `tests/` and exists; the line, or both lines of a range, are
+inside the file; a range has first <= last and spans at most 30 lines. Put the location right after `Test-defect: `,
+then a space and the reason. A line in any other form is not a defect claim: the coordinator treats the FAIL as an ordinary
+builder failure and does not send the task to QA.
 
 The coordinator then sends the task back to QA, at most twice per task. Use it only for a real contradiction,
 not for a test that is hard to pass. Your `src/` changes are discarded when the stage fails, so report the

@@ -7,7 +7,7 @@
 // from the events after the task's last "task-start": a finished stage is never re-run (its
 // transition is applied), an interrupted one re-runs with the same attempt number in a reset
 // worktree. Escalation, PR and merge steps check before they act, so nothing is created twice.
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { FactoryConfig } from "./config.ts";
 import { writeEscalationDraft, harnessFixIssue, harnessFixLine, type AttemptRecord } from "./escalation.ts";
@@ -347,18 +347,27 @@ async function closeSuperseded(d: Deps, issue: Issue, current: string, url: stri
   }
 }
 
+/** F12 (owner, 2026-11-28; resume-sg#21): a line range in a Test-defect entry spans at most this many lines. */
+export const MAX_DEFECT_RANGE = 30;
+
 /**
- * F12: the Test-defect entries ("<file>:<line> <reason>", joined with " | ") that name a file under tests/ that
- * exists in the worktree, at a line the file has. Undefined when none does.
+ * F12: the Test-defect entries ("<file>:<line> <reason>" or "<file>:<first>-<last> <reason>", joined with " | ") that
+ * name a regular file under tests/ that exists in the worktree, at a line (or a range of lines) the file has. A range
+ * needs first <= last and at most MAX_DEFECT_RANGE lines. Undefined when no entry qualifies. resume-sg#21: the builder
+ * wrote "tests/unit/sample-mode.test.tsx:209-212" twice, the single-line pattern dropped both, and the task went back
+ * to the builder instead of QA.
  */
 export function validTestDefects(worktree: string, joined: string): string | undefined {
   const ok = joined.split(" | ").filter((d) => {
-    const m = /^(tests\/[^\s:]+):([0-9]+)(\s|$)/.exec(d);
+    const m = /^(tests\/[^\s:]+):([0-9]+)(?:-([0-9]+))?(\s|$)/.exec(d);
     if (!m || (m[1] ?? "").split("/").includes("..")) return false;
     const file = join(worktree, m[1] ?? "");
-    if (!existsSync(file)) return false;
-    const line = Number(m[2]);
-    return line >= 1 && line <= readFileSync(file, "utf8").split("\n").length;
+    if (!existsSync(file) || !statSync(file).isFile()) return false;
+    const first = Number(m[2]);
+    const last = m[3] === undefined ? first : Number(m[3]);
+    const text = readFileSync(file, "utf8");
+    const lines = text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+    return first >= 1 && first <= last && last <= lines && last - first + 1 <= MAX_DEFECT_RANGE;
   });
   return ok.length ? ok.join(" | ") : undefined;
 }
