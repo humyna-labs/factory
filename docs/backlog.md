@@ -429,6 +429,13 @@ coach reviews it before any "approved to run <sha>".
   factory checkout; a gate process can still write other directories under /workspace (for example `runs/plans/`,
   other worktrees, the run ledger). Solved by the isolated sandbox of F01/F02 (the gate sees only its task worktree
   and a temp dir, writable), not by more after-the-fact checks.
+- [ ] **FL-43 A restart refuses to start while a test changed on both sides is unlisted.** S, low. Owner, 2026-11-28
+  22:30 SGT (written only, not built; resume-sg#49): on a restart the coordinator computes the tests changed both on
+  main since the previous run's base and on the previous task branch, `comm -12 <(git diff --name-only <base>
+  origin/main -- tests | sort) <(git diff --name-only <base> <previous branch tip> -- tests | sort)`, and does not start
+  the task if a file of that intersection is not named in the issue's "Existing tests affected" line. Evidence: the
+  #49 restart of 2026-11-28 escalated because tests/unit/result-fixes-markdown.test.tsx, changed by #52 (#67) and by
+  #49 (702fc26), was missing from that line.
 
 ## Needs live sessions or the human
 
