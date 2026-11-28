@@ -2,6 +2,8 @@ export interface GateResult {
   name: string;
   ok: boolean;
   detail: string;
+  /** F01a/F01b: the gate changed files it must not touch; the coordinator escalates the task. */
+  escalate?: boolean;
 }
 
 export interface GateContext {

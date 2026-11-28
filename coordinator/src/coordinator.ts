@@ -89,6 +89,8 @@ interface TaskCtx {
   testRuns: number;
   /** The last finished stage was a builder failure that named a defective test. */
   testDefect: boolean;
+  /** F01a/F01b: the last failure must escalate at once. */
+  escalateNow: boolean;
   history: AttemptRecord[];
   reports: string[];
   previousFailure: string | undefined;
@@ -142,7 +144,7 @@ export async function restartTask(d: Deps, issue: Issue, reason: string): Promis
 export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
   const id = taskId(issue);
   const res: TaskResult = { task: id, final: "ready", stoppedForTime: false, turns: 0, costUsd: 0, blockedActions: 0 };
-  const c: TaskCtx = { issue, id, max: d.cfg.max_impl_attempts, implAttempts: 0, testRuns: 0, testDefect: false, history: [], reports: [], previousFailure: undefined, lastHarnessFix: undefined, risk: "high", past: [], grants: [] };
+  const c: TaskCtx = { issue, id, max: d.cfg.max_impl_attempts, implAttempts: 0, testRuns: 0, testDefect: false, escalateNow: false, history: [], reports: [], previousFailure: undefined, lastHarnessFix: undefined, risk: "high", past: [], grants: [] };
   const gd = decideGrants(issue);
   c.grants = gd.grants;
   if (gd.grants.length || gd.refused) d.events.write({ ts: isoUtc(d.now()), type: "grants", task: id, granted: gd.grants.join(","), ...(gd.refused ? { refused: gd.refused } : {}) });
@@ -198,6 +200,7 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
     if (stage === "impl") c.implAttempts++;
     if (stage === "tests") c.testRuns++;
     c.testDefect = stage === "impl" && !out.passed && out.testDefect !== undefined;
+    c.escalateNow = !out.passed && out.escalate === true;
     res.turns += out.turns;
     res.costUsd += out.costUsd;
     res.blockedActions += out.blockedActions;
@@ -219,6 +222,7 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
       ...(out.risk ? { risk: out.risk } : {}),
       ...(out.proposedHarnessFix ? { harness_fix_proposal: out.proposedHarnessFix } : {}),
       ...(c.testDefect && out.testDefect ? { test_defect: out.testDefect } : {}),
+      ...(c.escalateNow ? { escalate: true } : {}),
     });
     c.previousFailure = out.passed ? undefined : c.testDefect ? `${stage}: Test-defect: ${out.testDefect ?? ""}` : `${stage}: ${out.reason}`;
     state = await advance(d, c, stage, out.passed, res);
@@ -234,7 +238,7 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
 /** Apply the transition after a finished stage: terminal rows, escalation, then the label. */
 async function advance(d: Deps, c: TaskCtx, stage: Stage, passed: boolean, res: TaskResult): Promise<State> {
   const { issue, id, max } = c;
-  const next = transition(stage, passed, { implAttempts: c.implAttempts, maxImplAttempts: max, risk: c.risk, testDefect: c.testDefect, testRewrites: Math.max(0, c.testRuns - 1) });
+  const next = transition(stage, passed, { implAttempts: c.implAttempts, maxImplAttempts: max, risk: c.risk, testDefect: c.testDefect, testRewrites: Math.max(0, c.testRuns - 1), escalateNow: c.escalateNow });
   const done = (type: string) => c.past.some((e) => e.type === type);
   if (next === "escalated") {
     const input = { issue, failedStage: stage, history: c.history, maxImplAttempts: max, reportPaths: c.reports, ...(c.lastHarnessFix ? { proposedHarnessFix: c.lastHarnessFix } : {}) };
@@ -367,7 +371,7 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
       if (!out.passed) return out;
       const base = await d.workspace.baseSha(c.worktree);
       const red = await d.gates.red({ worktree: c.worktree, task: id, attempt, ...(base ? { base } : {}) });
-      return red.ok ? out : { ...out, passed: false, reason: `red check: ${red.detail}` };
+      return red.ok ? out : { ...out, passed: false, reason: `red check: ${red.detail}`, ...(red.escalate ? { escalate: true } : {}) };
     }
     case "impl":
       return runRole(d, issue, "builder", stage, attempt, c);
@@ -378,6 +382,7 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
     case "verify": {
       const results = await d.gates.verify({ worktree: c.worktree, task: id, attempt });
       const failed = results.filter((g) => !g.ok);
+      const escalate = failed.some((g) => g.escalate === true);
       // W2-07 (P-06): only this stage marks the task's feature as passing, or back to failing.
       const feature = featureOf(issue);
       let mark: string;
@@ -387,8 +392,12 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
         mark = `invalid feature_list.json: ${(err as Error).message.split("\n")[0] ?? ""}`;
       }
       d.events.write({ ts: isoUtc(d.now()), type: "feature-list", task: id, feature: feature ?? "", result: mark });
-      if (mark === "updated") await d.workspace.commit(c.worktree, `factory(verify): ${issue.repo}#${issue.number} feature ${feature ?? ""} ${failed.length ? "failing" : "passing"}`, "coordinator");
-      return { passed: failed.length === 0, reason: failed.length ? failed.map((g) => `${g.name}: ${g.detail}`).join("; ") : "all gates pass", ...ZERO };
+      // F01a: the verify stage stages only what it owns (feature_list.json), never `git add -A`; anything else
+      // still changed in the worktree escalates.
+      const extra = (await d.workspace.changedFiles(c.worktree)).filter((f) => f !== "feature_list.json");
+      if (extra.length) return { passed: false, escalate: true, reason: `verify: files changed outside what the stage owns: ${extra.slice(0, 10).join(", ")}`, ...ZERO };
+      if (mark === "updated") await d.workspace.commitPaths(c.worktree, ["feature_list.json"], `factory(verify): ${issue.repo}#${issue.number} feature ${feature ?? ""} ${failed.length ? "failing" : "passing"}`, "coordinator");
+      return { passed: failed.length === 0, ...(escalate ? { escalate: true } : {}), reason: failed.length ? failed.map((g) => `${g.name}: ${g.detail}`).join("; ") : "all gates pass", ...ZERO };
     }
     case "pr": {
       const changed = await d.workspace.filesChangedFromBase(c.worktree);

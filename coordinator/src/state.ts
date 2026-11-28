@@ -33,6 +33,8 @@ export interface TransitionContext {
   testDefect?: boolean;
   /** QA re-runs already made for this task after a test defect. */
   testRewrites?: number;
+  /** F01a/F01b: the failure is a harness integrity problem (a gate changed files); escalate at once. */
+  escalateNow?: boolean;
 }
 
 /** Stages whose failure sends the task back to the builder. */
@@ -65,6 +67,7 @@ export function transition(state: State, passed: boolean, ctx: TransitionContext
         return ctx.risk === "low" ? "auto-merge" : "needs-human";
     }
   }
+  if (ctx.escalateNow === true) return "escalated";
   if (state === "impl" && ctx.testDefect === true && (ctx.testRewrites ?? 0) < MAX_TEST_REWRITES) return "tests";
   if ((RETRYABLE as readonly State[]).includes(state)) {
     return ctx.implAttempts < ctx.maxImplAttempts ? "impl" : "escalated";

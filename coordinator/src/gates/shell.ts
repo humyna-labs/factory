@@ -115,9 +115,25 @@ export class ShellGates implements GateRunner {
     return { name: "red", ok: true, detail: `${g.name} fails as expected` };
   }
 
+  /**
+   * F01a: after every gate the task worktree must show no change at all (git status, untracked files included,
+   * ignored build output excepted). The verify stage itself writes only feature_list.json, after the gates.
+   */
+  private async worktreeUnchanged(worktree: string, after: string): Promise<GateResult | undefined> {
+    const st = await this.git(worktree, ["status", "--porcelain", "--no-renames", "--untracked-files=all", "-z"]);
+    if (st.code !== 0) return { name: "worktree", ok: false, escalate: true, detail: `git status failed after ${after}; failing closed` };
+    const paths = st.stdout.split("\0").filter(Boolean).map((e) => e.slice(3));
+    if (!paths.length) return undefined;
+    return { name: "worktree", ok: false, escalate: true, detail: `gate ${after} changed files in the task worktree: ${paths.slice(0, 10).join(", ")}` };
+  }
+
   async verify(ctx: GateContext): Promise<GateResult[]> {
     const out: GateResult[] = [];
-    for (const [name, cmd] of Object.entries(this.cfg.gates)) out.push(await this.one(name, cmd, ctx.worktree));
+    for (const [name, cmd] of Object.entries(this.cfg.gates)) {
+      out.push(await this.one(name, cmd, ctx.worktree));
+      const stray = await this.worktreeUnchanged(ctx.worktree, name);
+      if (stray) return [...out, stray];
+    }
     const secret = await this.run(factoryPath("hooks", "secret-guard.sh"), ["--scan-git"], { cwd: ctx.worktree, timeoutMs: 120_000 });
     out.push({ name: "secrets", ok: secret.code === 0, detail: secret.code === 0 ? "no findings" : secret.stderr.trim().split("\n")[0] ?? "findings" });
     return out;

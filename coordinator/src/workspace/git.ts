@@ -135,6 +135,14 @@ export class GitWorkspace {
    * git's quoted form ("src/ai/\346\226\207.ts" would not match src/ai/**), and --no-renames, so both sides of a
    * rename are rated.
    */
+  /** F01a: commit only the given paths (never `git add -A`). Returns false if they had no change. */
+  async commitPaths(worktree: string, paths: string[], subject: string, role: LedgerRole): Promise<boolean> {
+    await this.git(worktree, ["add", "--", ...paths]);
+    if (!(await this.git(worktree, ["diff", "--cached", "--name-only"])).trim()) return false;
+    await this.git(worktree, ["commit", "-q", "-m", subject.replace(/[^\x20-\x7E]/g, "?"), "-m", `Agent-Role: ${role}`, "--", ...paths]);
+    return true;
+  }
+
   async filesChangedFromBase(worktree: string): Promise<string[]> {
     return (await this.git(worktree, ["diff", "--no-renames", "--name-only", "-z", `${this.base}...HEAD`])).split("\0").filter(Boolean);
   }

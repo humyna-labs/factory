@@ -43,4 +43,6 @@ export interface StageOutcome {
   testDefect?: string;
   risk?: Risk;
   prUrl?: string;
+  /** F01a/F01b: a gate changed files it must not touch; the task escalates without another attempt. */
+  escalate?: boolean;
 }

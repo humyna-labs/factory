@@ -378,7 +378,7 @@ coach reviews it before any "approved to run <sha>".
 - [x] **F12 Test-defect claims do not override independent failures.** S, high. Drop the Test-defect flag when the
   scope, report or session checks fail on their own; a defect must name an existing `tests/` file and line. Test:
   the review's example goes to the builder failure policy, not to QA. (Missed in the reviews of 71ab18c.)
-- [ ] **F01a Verify stage stages only what it owns.** S, high. The verify stage stages `feature_list.json` only,
+- [x] **F01a Verify stage stages only what it owns.** S, high. The verify stage stages `feature_list.json` only,
   never `git add -A`; after every gate `git status` shows no change outside what the stage allows, else escalate.
   Test: a test that writes `src/x.ts` during the gate escalates.
 - [ ] **F01b The factory checkout is unchanged after every gate.** S, high. After every gate, `git status` of
