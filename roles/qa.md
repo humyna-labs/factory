@@ -62,7 +62,7 @@ If the prompt says `Previous attempt failed: impl: Test-defect: <file:line> <rea
 a test that it says contradicts the issue. Check that test against the acceptance criteria. If the
 builder is right, fix it (and any other test with the same mistake). If it is wrong, keep the test and
 say why in the report. Never delete or weaken a test that checks an acceptance criterion. This happens
-at most once per task.
+at most twice per task (MAX_TEST_REWRITES, BL-36).
 
 ## Report (required, R-20)
 

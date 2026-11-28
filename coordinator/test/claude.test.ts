@@ -131,6 +131,19 @@ describe("ClaudeRunner", () => {
     const r = await runner.run(session("qa"));
     expect(r).toMatchObject({ ok: true, turns: 36, costUsd: 1.2, summary: "PASS: done" });
   });
+  it("F12: a Test-defect line counts only from a clean session that ended with FAIL", async () => {
+    const run = async (ev: Record<string, unknown>, code = 0) => {
+      const fakeExec: Exec = async (_c, _a, o) => {
+        o?.onStdoutLine?.(JSON.stringify({ type: "result", num_turns: 1, total_cost_usd: 0.1, ...ev }));
+        return { code, stdout: "", stderr: "", timedOut: false };
+      };
+      return new ClaudeRunner({ exec: fakeExec, loadRole: loadRoleConfig, ...opts }).run({ ...session(), tracePath: `/tmp/factory-claude-defect-${process.pid}.jsonl` });
+    };
+    const text = "FAIL: a test contradicts AC1\nTest-defect: tests/unit/a.test.ts:3 expects the old text";
+    expect((await run({ is_error: false, result: text })).testDefect).toBe("tests/unit/a.test.ts:3 expects the old text");
+    expect((await run({ is_error: true, subtype: "error_max_turns", result: text })).testDefect).toBeUndefined();
+    expect((await run({ is_error: false, result: text }, 1)).testDefect).toBeUndefined();
+  });
   it("passes only with exit 0, a result event and a PASS verdict", async () => {
     let seenKind = "";
     const fakeExec: Exec = async (_c, _a, o) => {

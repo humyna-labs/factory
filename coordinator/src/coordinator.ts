@@ -8,6 +8,7 @@
 // transition is applied), an interrupted one re-runs with the same attempt number in a reset
 // worktree. Escalation, PR and merge steps check before they act, so nothing is created twice.
 import { existsSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import type { FactoryConfig } from "./config.ts";
 import { writeEscalationDraft, harnessFixIssue, harnessFixLine, type AttemptRecord } from "./escalation.ts";
 import { readEvents, type EventLog, type FactoryEvent } from "./events.ts";
@@ -302,9 +303,12 @@ async function runRole(d: Deps, issue: Issue, role: Role, stage: Stage, attempt:
   const base = { turns: r.turns, costUsd: r.costUsd, blockedActions: blocked };
   if (existsSync(rp)) appendReportIndex(d.paths.reportsDir, { path: rp, repo: issue.repo, issue: issue.number, stage, attempt, utc: isoUtc(d.now()) });
   const report = checkReport(rp);
-  const fix = { ...(report.proposedHarnessFix ? { proposedHarnessFix: report.proposedHarnessFix } : {}), ...(role === "builder" && r.testDefect ? { testDefect: r.testDefect } : {}) };
   const changed = await d.workspace.changedFiles(c.worktree);
   const denied = await outOfScope(d.exec, role, c.worktree, changed, c.grants);
+  // F12: a Test-defect claim sends the task to QA only when nothing else failed on its own (scope, report) and
+  // it names an existing tests/ file and line. Otherwise the builder failure policy applies.
+  const defect = role === "builder" && r.testDefect && !denied.length && report.ok ? validTestDefects(c.worktree, r.testDefect) : undefined;
+  const fix = { ...(report.proposedHarnessFix ? { proposedHarnessFix: report.proposedHarnessFix } : {}), ...(defect ? { testDefect: defect } : {}) };
   let failure: string | undefined;
   if (denied.length) failure = `out-of-scope writes by ${role}: ${denied.join(", ")}`;
   else if (!report.ok) failure = `report check failed: ${report.problems.join("; ")}`;
@@ -337,6 +341,22 @@ async function closeSuperseded(d: Deps, issue: Issue, current: string, url: stri
     await d.gh.closePullRequest(issue.owner, issue.repo, old.number, `Superseded by ${url}: the task was restarted on the new branch ${current} (no force pushes, F04). Closed by the factory coordinator. Agent-Role: coordinator`);
     d.events.write({ ts: isoUtc(d.now()), type: "pr-superseded", task: taskId(issue), closed: old.number, by: url });
   }
+}
+
+/**
+ * F12: the Test-defect entries ("<file>:<line> <reason>", joined with " | ") that name a file under tests/ that
+ * exists in the worktree, at a line the file has. Undefined when none does.
+ */
+export function validTestDefects(worktree: string, joined: string): string | undefined {
+  const ok = joined.split(" | ").filter((d) => {
+    const m = /^(tests\/[^\s:]+):([0-9]+)(\s|$)/.exec(d);
+    if (!m || (m[1] ?? "").split("/").includes("..")) return false;
+    const file = join(worktree, m[1] ?? "");
+    if (!existsSync(file)) return false;
+    const line = Number(m[2]);
+    return line >= 1 && line <= readFileSync(file, "utf8").split("\n").length;
+  });
+  return ok.length ? ok.join(" | ") : undefined;
 }
 
 async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c: StageCtx): Promise<StageOutcome> {

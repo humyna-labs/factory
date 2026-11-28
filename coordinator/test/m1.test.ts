@@ -107,6 +107,46 @@ describe("Test-defect: the builder can send a defective test back to QA twice pe
     expect(ev.find((e) => e.type === "stage" && e.stage === "impl" && e.passed === false)?.test_defect).toMatch(/contradicts AC1/);
   });
 
+  it("F12: a defect claim with an out-of-scope edit goes to the builder failure policy, not to QA", async () => {
+    const r = await dryRun((f) => {
+      f.issues = [{ number: 205, title: "Shell", labels: ["factory:ready", "risk:low"], body: "x" }];
+      f.scenarios = { "resume-sg#205": { builder: ["defect-out-of-scope", "pass"] } };
+    });
+    const rows = rowsOf(r.paths.runsCsv, "resume-sg#205");
+    expect(rows.map((x) => `${x.stage}:${x.outcome}`).slice(0, 3)).toEqual(["tests:pass", "impl:fail", "impl:pass"]);
+    const ev = readEvents(r.paths.events).filter((e) => e.task === "resume-sg#205");
+    const failed = ev.find((e) => e.type === "stage" && e.stage === "impl" && e.passed === false);
+    expect(failed?.test_defect).toBeUndefined();
+    expect(String(failed?.reason)).toMatch(/out-of-scope writes by builder: tests\/unit\/sneaky.test.ts/);
+  });
+
+  it("F12: a defect claim that names no existing tests/ file and line goes to the builder failure policy", async () => {
+    const r = await dryRun((f) => {
+      f.issues = [{ number: 206, title: "Shell", labels: ["factory:ready", "risk:low"], body: "x" }];
+      f.scenarios = { "resume-sg#206": { builder: ["defect-missing-file", "pass"] } };
+    });
+    const rows = rowsOf(r.paths.runsCsv, "resume-sg#206");
+    expect(rows.map((x) => `${x.stage}:${x.outcome}`).slice(0, 3)).toEqual(["tests:pass", "impl:fail", "impl:pass"]);
+  });
+
+  it("F12: validTestDefects keeps only entries that name an existing tests/ file at a line it has", async () => {
+    const { validTestDefects } = await import("../src/coordinator.ts");
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const wt = mkdtempSync(join(tmpdir(), "factory-defect-"));
+    mkdirSync(join(wt, "tests/unit"), { recursive: true });
+    writeFileSync(join(wt, "tests/unit/a.test.ts"), "one\ntwo\nthree\n");
+    writeFileSync(join(wt, "src.ts"), "x\n");
+    expect(validTestDefects(wt, "tests/unit/a.test.ts:3 x")).toBe("tests/unit/a.test.ts:3 x");
+    expect(validTestDefects(wt, "tests/unit/a.test.ts:99 x")).toBeUndefined();
+    expect(validTestDefects(wt, "tests/unit/b.test.ts:1 x")).toBeUndefined();
+    expect(validTestDefects(wt, "src.ts:1 x")).toBeUndefined();
+    expect(validTestDefects(wt, "tests/../src.ts:1 x")).toBeUndefined();
+    expect(validTestDefects(wt, "the test is wrong")).toBeUndefined();
+    expect(validTestDefects(wt, "tests/unit/b.test.ts:1 x | tests/unit/a.test.ts:2 y")).toBe("tests/unit/a.test.ts:2 y");
+  });
+
   it("flow: a second test defect goes back to QA too, then the task finishes (resume-sg#38, #11, #41, #42)", async () => {
     const r = await dryRun((f) => {
       f.issues = [{ number: 204, title: "Shell", labels: ["factory:ready", "risk:low"], body: "x" }];

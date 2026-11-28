@@ -375,7 +375,7 @@ coach reviews it before any "approved to run <sha>".
   event with `is_error` fails the stage; the verdict must match `^(PASS|FAIL)(:|\s*$)` on the first line. Test: the
   two-event stream of the review fails; "PASS is not warranted" is not a pass. (Missed in the reviews of 2982a5f;
   see docs/failures.md 2026-11-27.)
-- [ ] **F12 Test-defect claims do not override independent failures.** S, high. Drop the Test-defect flag when the
+- [x] **F12 Test-defect claims do not override independent failures.** S, high. Drop the Test-defect flag when the
   scope, report or session checks fail on their own; a defect must name an existing `tests/` file and line. Test:
   the review's example goes to the builder failure policy, not to QA. (Missed in the reviews of 71ab18c.)
 - [ ] **F01a Verify stage stages only what it owns.** S, high. The verify stage stages `feature_list.json` only,

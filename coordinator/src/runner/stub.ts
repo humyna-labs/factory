@@ -10,7 +10,7 @@ import type { RoleResult, RoleRunner, RoleSession } from "./types.ts";
  *  hang-once: the first time, hang until the process is killed (resume test, W2-06); later, pass.
  *  test-defect: fail and name a defective test (builder, jd2cv-m1).
  *  blocked-once: one hook denial, seen both in guard.log and in the session result; then pass. */
-export type StubStep = "pass" | "fail" | "no-report" | "out-of-scope" | "hang-once" | "test-defect" | "blocked-once";
+export type StubStep = "pass" | "fail" | "no-report" | "out-of-scope" | "hang-once" | "test-defect" | "blocked-once" | "defect-out-of-scope" | "defect-missing-file";
 export type Scenario = Partial<Record<Role | "verify" | "red", StubStep[]>> & { changes?: string[] };
 export type Scenarios = Record<string, Scenario>;
 
@@ -73,12 +73,15 @@ export class StubRunner implements RoleRunner {
     if (s.role === "builder") {
       for (const rel of sc.changes ?? [`src/features/${slug}.ts`]) write(s.worktree, rel, `// stub implementation for ${id}, attempt ${s.attempt}\nexport const attempt = ${s.attempt};\n`);
     }
+    if (step === "defect-out-of-scope") write(s.worktree, "tests/unit/sneaky.test.ts", "// out of scope\n");
     if (step === "out-of-scope") write(s.worktree, s.role === "qa" ? "src/sneaky.ts" : "tests/unit/sneaky.test.ts", "// out of scope\n");
     if (step !== "no-report") {
       mkdirSync(dirname(s.reportPath), { recursive: true });
       writeFileSync(s.reportPath, stubReport(s, step));
     }
     if (step === "test-defect") return { ok: false, turns: 1, costUsd: 0, blockedActions: 0, summary: `stub ${s.role} found a test defect`, testDefect: `tests/unit/${slug}.test.ts:1 contradicts AC1` };
+    if (step === "defect-out-of-scope") return { ok: false, turns: 1, costUsd: 0, blockedActions: 0, summary: `stub ${s.role} edited a test and claims a defect`, testDefect: `tests/unit/${slug}.test.ts:1 contradicts AC1` };
+    if (step === "defect-missing-file") return { ok: false, turns: 1, costUsd: 0, blockedActions: 0, summary: `stub ${s.role} claims a defect in a file that does not exist`, testDefect: "tests/unit/nope.test.ts:3 contradicts AC1" };
     if (step === "blocked-once" && this.guardLog) {
       mkdirSync(dirname(this.guardLog), { recursive: true });
       appendFileSync(this.guardLog, `2026-01-01T00:00:00Z role=${s.role} tool=Bash rule=B3 target=ls tests/\n`);

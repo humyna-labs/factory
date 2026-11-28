@@ -166,7 +166,9 @@ export class ClaudeRunner implements RoleRunner {
         : sum.isError
           ? `session ended with ${sum.subtype}`
           : (sum.finalText.split("\n")[0] ?? "").slice(0, 160);
-    const defect = testDefectOf(sum.finalText);
+    // F12: a defect claim counts only from a clean session that ended with a FAIL verdict.
+    const clean = r.code === 0 && !r.timedOut && sum.sawResult && !sum.isError;
+    const defect = clean ? testDefectOf(sum.finalText) : undefined;
     return { ok, turns: sum.turns, costUsd: sum.costUsd, blockedActions: sum.permissionDenials, summary: reason, ...(defect ? { testDefect: defect } : {}) };
   }
 }
