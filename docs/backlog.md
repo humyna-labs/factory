@@ -425,6 +425,10 @@ coach reviews it before any "approved to run <sha>".
   grants, candidate SHA); a change forces a restart.
 - [ ] **F14 PR state survives an interruption.** S, high. Persist the PR number, URL, SHA and auto-merge state in the
   stage event; restore them on resume.
+- [ ] **F01f Gates cannot write /workspace outside the task.** M, high. Owner, 2026-11-28: F01b only checks the
+  factory checkout; a gate process can still write other directories under /workspace (for example `runs/plans/`,
+  other worktrees, the run ledger). Solved by the isolated sandbox of F01/F02 (the gate sees only its task worktree
+  and a temp dir, writable), not by more after-the-fact checks.
 
 ## Needs live sessions or the human
 
