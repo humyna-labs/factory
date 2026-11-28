@@ -1,6 +1,6 @@
 // JSONL event log (spec 3.7 observability). Carries data runs.csv has no column for,
 // such as blocked-action counts (read-back conflict C7). Never logs environment values.
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 
 export interface FactoryEvent {
@@ -18,7 +18,24 @@ export class EventLog {
   }
   write(event: FactoryEvent): void {
     mkdirSync(dirname(this.path), { recursive: true });
-    appendFileSync(this.path, JSON.stringify(event) + "\n");
+    // F15: a kill can leave the last line without its newline. End it first, so the partial line stays one
+    // unparsable line (skipped by readEvents) and does not swallow this event.
+    appendFileSync(this.path, (endsMidLine(this.path) ? "\n" : "") + JSON.stringify(event) + "\n");
+  }
+}
+
+/** True when the file exists, is not empty and its last byte is not a newline. */
+function endsMidLine(path: string): boolean {
+  if (!existsSync(path)) return false;
+  const size = statSync(path).size;
+  if (size === 0) return false;
+  const fd = openSync(path, "r");
+  try {
+    const b = Buffer.alloc(1);
+    readSync(fd, b, 0, 1, size - 1);
+    return b[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
   }
 }
 

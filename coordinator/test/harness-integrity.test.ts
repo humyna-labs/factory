@@ -161,3 +161,27 @@ describe("F01b: the factory checkout is unchanged after every gate", () => {
     expect(r).toMatchObject({ name: "factory-checkout", ok: false, escalate: true });
   });
 });
+
+describe("F15: a truncated last event line does not swallow the next event", () => {
+  it("after a partial line, the next event is read back, and the partial one is skipped", async () => {
+    const { EventLog, readEvents } = await import("../src/events.ts");
+    const { appendFileSync, readFileSync } = await import("node:fs");
+    const path = join(tmp("factory-events-"), "events.jsonl");
+    const log = new EventLog(path);
+    log.write({ ts: "t1", type: "stage", task: "p#1", stage: "tests" });
+    appendFileSync(path, '{"ts":"t2","type":"stage","task":"p#1","sta');
+    log.write({ ts: "t3", type: "stage", task: "p#1", stage: "impl" });
+    expect(readEvents(path).map((e) => e.ts)).toEqual(["t1", "t3"]);
+    expect(readFileSync(path, "utf8").split("\n").filter(Boolean)).toHaveLength(3);
+  });
+
+  it("a clean log gets no extra blank line", async () => {
+    const { EventLog } = await import("../src/events.ts");
+    const { readFileSync } = await import("node:fs");
+    const path = join(tmp("factory-events-"), "events.jsonl");
+    const log = new EventLog(path);
+    log.write({ ts: "a", type: "x" });
+    log.write({ ts: "b", type: "x" });
+    expect(readFileSync(path, "utf8")).toBe('{"ts":"a","type":"x"}\n{"ts":"b","type":"x"}\n');
+  });
+});

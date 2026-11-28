@@ -388,7 +388,7 @@ coach reviews it before any "approved to run <sha>".
   `hooks/path-guard.sh` in a fixture factory checkout escalates.
 - [x] **F13 The red gate needs a complete run.** S, high. Reject timeouts and abnormal exits before looking for
   failures. Test: a timed-out run with a failure summary is not a valid red.
-- [ ] **F15 Repair a truncated event line.** S, high. Before appending, repair a truncated last line of
+- [x] **F15 Repair a truncated event line.** S, high. Before appending, repair a truncated last line of
   `events.jsonl`. Test: a partial line does not swallow the next event.
 - [ ] **F03 Pre-push scans every outgoing commit.** S, high. `gitleaks` over `base..HEAD`, not only the tree. Test: a
   token added and then removed blocks the push.
