@@ -380,7 +380,7 @@ coach reviews it before any "approved to run <sha>".
   the approved SHA, else the task escalates with the changed paths. Why: gates run as uid 1000 with `/workspace`
   mounted read-write, so a test can edit the factory's own code and hooks. Test: a gate that touches
   `hooks/path-guard.sh` in a fixture factory checkout escalates.
-- [ ] **F13 The red gate needs a complete run.** S, high. Reject timeouts and abnormal exits before looking for
+- [x] **F13 The red gate needs a complete run.** S, high. Reject timeouts and abnormal exits before looking for
   failures. Test: a timed-out run with a failure summary is not a valid red.
 - [ ] **F15 Repair a truncated event line.** S, high. Before appending, repair a truncated last line of
   `events.jsonl`. Test: a partial line does not swallow the next event.

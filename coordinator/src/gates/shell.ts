@@ -60,11 +60,11 @@ export class ShellGates implements GateRunner {
     return this.run("git", args, { cwd, kind: "git", timeoutMs: 120_000, ...(input !== undefined ? { input } : {}) });
   }
 
-  private async one(name: string, command: string, cwd: string): Promise<GateResult & { output: string }> {
+  private async one(name: string, command: string, cwd: string): Promise<GateResult & { output: string; code: number; timedOut: boolean }> {
     const r = await this.run("bash", ["-c", command], { cwd, timeoutMs: TIMEOUT_MS });
     const output = r.stdout + r.stderr;
     const tail = output.trim().split("\n").slice(-1)[0] ?? "";
-    return { name, ok: r.code === 0 && !r.timedOut, detail: r.timedOut ? "timed out" : `exit ${r.code}: ${tail.slice(0, 160)}`, output };
+    return { name, ok: r.code === 0 && !r.timedOut, detail: r.timedOut ? "timed out" : `exit ${r.code}: ${tail.slice(0, 160)}`, output, code: r.code, timedOut: r.timedOut };
   }
 
   /**
@@ -104,7 +104,11 @@ export class ShellGates implements GateRunner {
 
   private async redOn(dir: string): Promise<GateResult> {
     const g = await this.one(this.cfg.red_gate, this.cfg.gates[this.cfg.red_gate], dir);
+    // F13: a red needs a complete run. A timeout or an abnormal exit (a signal, or any code other than the test
+    // runners' "tests failed" code 1) is never a valid red, whatever failure summary it printed.
+    if (g.timedOut) return { name: "red", ok: false, detail: `${g.name} timed out: not a complete run, so not a valid red` };
     if (g.ok) return { name: "red", ok: false, detail: `${g.name} passed before implementation: tests do not fail first` };
+    if (g.code !== 1) return { name: "red", ok: false, detail: `${g.name} ended abnormally (exit ${g.code}): not a complete run, so not a valid red` };
     // jd2cv-m1 (resume-sg#4): a runner that crashes before any test runs (missing package, bad
     // config) also exits non-zero. Red means the run reached the tests and reported failures.
     if (!reportsFailures(g.output)) return { name: "red", ok: false, detail: `${g.name} failed without reporting failing tests (the test runner did not run): ${g.detail}` };
