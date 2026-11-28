@@ -98,11 +98,19 @@ async function main(argv: string[]): Promise<number> {
   const cfg = loadFactoryConfig(join(repoDir, ".factory", "factory.yaml"));
   const paths = runPaths(values["runs-dir"] ?? DEFAULT_RUNS_DIR);
   const gh = new GhGitHub(exec);
+  // F01b: the run checkout must be clean at start; its HEAD is the approved SHA every gate is checked against.
+  const factoryRoot = factoryPath();
+  const head = await exec("git", ["rev-parse", "HEAD"], { cwd: factoryRoot, kind: "git" });
+  const status = await exec("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: factoryRoot, kind: "git" });
+  if (head.code !== 0 || status.code !== 0) throw new Error(`cannot read the factory checkout ${factoryRoot}; refusing to run (F01b)`);
+  const factorySha = head.stdout.trim();
+  const dirty = status.stdout.trim();
+  if (dirty) throw new Error(`the factory checkout ${factoryRoot} is not clean; refusing to run (F01b): ${dirty.split("\n").slice(0, 5).join("; ")}`);
   const deps: Deps = {
     cfg,
     gh,
     runner: new ClaudeRunner({ exec, loadRole: loadRoleConfig, baseBranch: cfg.base_branch, reportsDir: paths.reportsDir, guardLog: paths.guardLog, escalationsDir: paths.escalationsDir }),
-    gates: new ShellGates(cfg, exec, { tmpRoot: join(paths.runsDir, "red") }),
+    gates: new ShellGates(cfg, exec, { tmpRoot: join(paths.runsDir, "red"), factory: { root: factoryRoot, sha: factorySha } }),
     workspace: new GitWorkspace(exec, { repoDir, worktreesDir: paths.worktreesDir, baseBranch: cfg.base_branch, remote: "origin", pushHookPath: factoryPath(".githooks") }),
     exec,
     ledger: new RunsCsvWriter(paths.runsCsv),

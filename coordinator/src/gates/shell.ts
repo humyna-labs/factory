@@ -20,6 +20,11 @@ export interface ShellGatesOptions {
   tmpRoot?: string;
   /** Command that installs dependencies in the baseline worktree (default BASELINE_INSTALL). */
   install?: string;
+  /**
+   * F01b: the factory's own run checkout (coordinator, hooks, roles, settings) and the approved SHA it must stay
+   * at. After every gate it must be clean and at that SHA, else the task escalates with the changed paths.
+   */
+  factory?: { root: string; sha: string };
 }
 
 /** True when a test runner's output reports failing tests or test files (Vitest and Playwright summaries). */
@@ -36,12 +41,28 @@ export class ShellGates implements GateRunner {
   private readonly remote: string;
   private readonly install: string;
   private readonly tmpRoot: string;
+  private readonly factory: { root: string; sha: string } | undefined;
   constructor(cfg: FactoryConfig, run: Exec, opts: ShellGatesOptions = {}) {
     this.cfg = cfg;
     this.run = run;
     this.remote = opts.remote ?? "origin";
     this.install = opts.install ?? BASELINE_INSTALL;
     this.tmpRoot = opts.tmpRoot ?? "/workspace/runs/red";
+    this.factory = opts.factory;
+  }
+
+  /** F01b: the factory checkout is clean and still at the approved SHA. */
+  private async factoryUnchanged(after: string): Promise<GateResult | undefined> {
+    if (!this.factory) return undefined;
+    const { root, sha } = this.factory;
+    const head = await this.git(root, ["rev-parse", "HEAD"]);
+    const st = await this.git(root, ["status", "--porcelain", "--no-renames", "--untracked-files=all", "-z"]);
+    if (head.code !== 0 || st.code !== 0) return { name: "factory-checkout", ok: false, escalate: true, detail: `cannot read the factory checkout ${root} after ${after}; failing closed` };
+    const paths = st.stdout.split("\0").filter(Boolean).map((e) => e.slice(3));
+    const moved = head.stdout.trim() !== sha;
+    if (!paths.length && !moved) return undefined;
+    const what = [moved ? `HEAD is ${head.stdout.trim().slice(0, 12)}, not the approved ${sha.slice(0, 12)}` : "", paths.length ? `changed: ${paths.slice(0, 10).join(", ")}` : ""].filter(Boolean).join("; ");
+    return { name: "factory-checkout", ok: false, escalate: true, detail: `gate ${after} changed the factory checkout ${root}: ${what}` };
   }
 
   /** The task baseline: the base SHA recorded at task start, else the merge base with the remote base branch. */
@@ -93,8 +114,11 @@ export class ShellGates implements GateRunner {
         if (apply.code !== 0) return fail(`test changes do not apply to the baseline: ${apply.stderr.trim().slice(0, 160)}`);
       }
       const inst = await this.one("install", this.install, dir);
+      const afterInstall = await this.factoryUnchanged("install");
+      if (afterInstall) return afterInstall;
       if (!inst.ok) return fail(`baseline install failed (${this.install}): ${inst.detail}`);
-      return await this.redOn(dir);
+      const red = await this.redOn(dir);
+      return (await this.factoryUnchanged(this.cfg.red_gate)) ?? red;
     } finally {
       await this.git(ctx.worktree, ["worktree", "remove", "--force", dir]);
       rmSync(dir, { recursive: true, force: true });
@@ -131,11 +155,13 @@ export class ShellGates implements GateRunner {
     const out: GateResult[] = [];
     for (const [name, cmd] of Object.entries(this.cfg.gates)) {
       out.push(await this.one(name, cmd, ctx.worktree));
-      const stray = await this.worktreeUnchanged(ctx.worktree, name);
+      const stray = (await this.factoryUnchanged(name)) ?? (await this.worktreeUnchanged(ctx.worktree, name));
       if (stray) return [...out, stray];
     }
     const secret = await this.run(factoryPath("hooks", "secret-guard.sh"), ["--scan-git"], { cwd: ctx.worktree, timeoutMs: 120_000 });
     out.push({ name: "secrets", ok: secret.code === 0, detail: secret.code === 0 ? "no findings" : secret.stderr.trim().split("\n")[0] ?? "findings" });
+    const afterScan = await this.factoryUnchanged("secrets");
+    if (afterScan) out.push(afterScan);
     return out;
   }
 }

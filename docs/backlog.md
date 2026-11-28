@@ -381,7 +381,7 @@ coach reviews it before any "approved to run <sha>".
 - [x] **F01a Verify stage stages only what it owns.** S, high. The verify stage stages `feature_list.json` only,
   never `git add -A`; after every gate `git status` shows no change outside what the stage allows, else escalate.
   Test: a test that writes `src/x.ts` during the gate escalates.
-- [ ] **F01b The factory checkout is unchanged after every gate.** S, high. After every gate, `git status` of
+- [x] **F01b The factory checkout is unchanged after every gate.** S, high. After every gate, `git status` of
   `/workspace/factory` (the run checkout: coordinator, hooks, roles, settings) must be clean and HEAD must still be
   the approved SHA, else the task escalates with the changed paths. Why: gates run as uid 1000 with `/workspace`
   mounted read-write, so a test can edit the factory's own code and hooks. Test: a gate that touches

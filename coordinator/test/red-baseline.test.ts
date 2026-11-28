@@ -173,7 +173,7 @@ describe("F16: the red check runs on the task baseline plus the new tests", () =
 
   it("the CLI puts the baseline worktrees under /workspace (<runs>/red), and that is also the default", () => {
     const cli = readFileSync(join(import.meta.dirname, "..", "src", "cli.ts"), "utf8");
-    expect(cli).toContain('new ShellGates(cfg, exec, { tmpRoot: join(paths.runsDir, "red") })');
+    expect(cli).toContain('new ShellGates(cfg, exec, { tmpRoot: join(paths.runsDir, "red"), factory: { root: factoryRoot, sha: factorySha } })');
     const src = readFileSync(join(import.meta.dirname, "..", "src", "gates", "shell.ts"), "utf8");
     expect(src).toContain('opts.tmpRoot ?? "/workspace/runs/red"');
   });

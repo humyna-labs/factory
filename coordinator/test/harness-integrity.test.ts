@@ -100,3 +100,64 @@ describe("F01a: every gate leaves the task worktree unchanged", () => {
     expect(git(wt, "status", "--porcelain")).toBe("?? src/");
   });
 });
+
+/** A stand-in for /workspace/factory: a git checkout with hooks/path-guard.sh, clean, at a known SHA. */
+function factoryCheckout(): { root: string; sha: string } {
+  const root = tmp("factory-checkout-");
+  execFileSync("git", ["init", "-q", "-b", "main", root]);
+  mkdirSync(join(root, "hooks"), { recursive: true });
+  writeFileSync(join(root, "hooks", "path-guard.sh"), "#!/bin/sh\nexit 2\n");
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "approved");
+  return { root, sha: git(root, "rev-parse", "HEAD") };
+}
+
+describe("F01b: the factory checkout is unchanged after every gate", () => {
+  it("a gate that touches hooks/path-guard.sh of the factory checkout escalates and names the path", async () => {
+    const f = factoryCheckout();
+    const wt = repo();
+    const res = await new ShellGates(cfgWith(`echo exit0 >> ${f.root}/hooks/path-guard.sh`), exec, { factory: f }).verify(ctx(wt));
+    const last = res[res.length - 1];
+    expect(last).toMatchObject({ name: "factory-checkout", ok: false, escalate: true });
+    expect(last?.detail).toMatch(/gate unit changed the factory checkout .*: changed: hooks\/path-guard.sh/);
+  });
+
+  it("a gate that moves the factory HEAD away from the approved SHA escalates", async () => {
+    const f = factoryCheckout();
+    const wt = repo();
+    const res = await new ShellGates(cfgWith(`git -C ${f.root} -c user.name=x -c user.email=x@localhost commit -q --allow-empty -m sneaky`), exec, { factory: f }).verify(ctx(wt));
+    expect(res.find((g) => g.name === "factory-checkout")?.detail).toMatch(/not the approved/);
+  });
+
+  it("a new untracked file in the factory checkout escalates too", async () => {
+    const f = factoryCheckout();
+    const res = await new ShellGates(cfgWith(`touch ${f.root}/settings.json`), exec, { factory: f }).verify(ctx(repo()));
+    expect(res.find((g) => g.name === "factory-checkout")?.detail).toMatch(/settings.json/);
+  });
+
+  it("gates that leave the factory checkout alone pass the check", async () => {
+    const f = factoryCheckout();
+    const res = await new ShellGates(cfgWith("true"), exec, { factory: f }).verify(ctx(repo()));
+    expect(res.some((g) => g.escalate)).toBe(false);
+  });
+
+  it("the red gate is checked as well: changing the factory during the red check escalates", async () => {
+    const f = factoryCheckout();
+    const root = tmp("factory-red-fixture-");
+    const origin = join(root, "origin.git");
+    const wt = join(root, "repo");
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+    execFileSync("git", ["clone", "-q", origin, wt]);
+    writeFileSync(join(wt, "a.txt"), "a\n");
+    git(wt, "add", "-A");
+    git(wt, "commit", "-qm", "base");
+    git(wt, "push", "-q", "origin", "HEAD:main");
+    git(wt, "fetch", "-q", "origin");
+    mkdirSync(join(wt, "tests"), { recursive: true });
+    writeFileSync(join(wt, "tests", "t.sh"), `echo x >> ${f.root}/hooks/path-guard.sh; echo " Tests  1 failed (1)"; exit 1\n`);
+    git(wt, "add", "-A");
+    git(wt, "commit", "-qm", "tests");
+    const r = await new ShellGates(cfgWith("sh tests/t.sh"), exec, { factory: f, install: "true", tmpRoot: tmp("factory-red-root-") }).red(ctx(wt));
+    expect(r).toMatchObject({ name: "factory-checkout", ok: false, escalate: true });
+  });
+});
