@@ -91,8 +91,13 @@ check_path() { # <root> <path>
   rel=${target#"$root"/}
 
   # RULE R3 begin  (harness files are never written by roles)
+  # F09 (owner, 2026-11-28): agent instruction and repo-config files are denied at any depth (CLAUDE.md,
+  # CLAUDE.local.md, AGENTS.md, .gitignore, .gitattributes, .claude/); hooks/, scripts/, settings/ and .githooks/
+  # only at the repository root, because src/hooks/ is a common React directory and must stay writable.
   case "$rel" in
-    .git | .git/* | */.git/* | .github/* | */.github/* | .githooks/* | .factory/* | .claude/* | */.claude/* | CODEOWNERS | */CODEOWNERS)
+    .git | .git/* | */.git/* | .github/* | */.github/* | .githooks/* | .factory/* | .claude/* | */.claude/* | CODEOWNERS | */CODEOWNERS | \
+      CLAUDE.md | */CLAUDE.md | CLAUDE.local.md | */CLAUDE.local.md | AGENTS.md | */AGENTS.md | \
+      .gitignore | */.gitignore | .gitattributes | */.gitattributes | hooks/* | scripts/* | settings/*)
       deny R3 "$rel" "Harness, CI and repo-config files are high risk (R-18). Propose the change in report section 8; a human applies it."
       ;;
   esac

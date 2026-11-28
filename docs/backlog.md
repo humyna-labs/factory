@@ -365,9 +365,12 @@ coach reviews it before any "approved to run <sha>".
   `--no-renames`). Test: `R  src/x.ts <- tests/y.ts` is out of scope for the builder.
 - [x] **F08 No quoted file names in the risk check.** S, high. `filesChangedFromBase` uses
   `git diff --no-renames --name-only -z`. Test: a non-ASCII path under a high-risk directory is high risk.
-- [ ] **F09 Instruction files denied at any depth.** S, high. R3 denies `CLAUDE.md`, `AGENTS.md`, `.gitignore`,
+- [x] **F09 Instruction files denied at any depth.** S, high. R3 denies `CLAUDE.md`, `AGENTS.md`, `.gitignore`,
   `.claude/`, `settings/`, `hooks/`, `.githooks/`, `scripts/` at any depth, before the role allow rules. Test:
   `src/CLAUDE.md` and `tests/.gitignore` are denied (added to the mutation fixtures).
+  Owner, 2026-11-28: at any depth only `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `.gitignore`, `.gitattributes`
+  and `.claude/`; `hooks/`, `scripts/`, `settings/` and `.githooks/` only at the repository root (`src/hooks/useX.ts`
+  stays writable for the builder).
 - [ ] **F11 A later session error fails the stage.** S, high. Track errors apart from the verdict: any later result
   event with `is_error` fails the stage; the verdict must match `^(PASS|FAIL)(:|\s*$)` on the first line. Test: the
   two-event stream of the review fails; "PASS is not warranted" is not a pass. (Missed in the reviews of 2982a5f;
