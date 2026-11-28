@@ -72,7 +72,7 @@ You never ask a question and never wait for input (R-12). If you cannot finish, 
 session with a final message of this shape and put the same content in the report:
 
 ```
-FAIL <one-line reason>
+FAIL: <one-line reason>
 Blocker: <what stopped you, with file:line or command output>
 Options: 1) <option> 2) <option> [3) <option>]
 Recommendation: <option number and why>
@@ -84,6 +84,7 @@ another form. Record it in the report.
 
 ## Always
 
-- Final message starts with `PASS` or `FAIL` and one line of reason.
+- The first line of the final message is `PASS: <one-line reason>` or `FAIL: <one-line reason>` (the
+  coordinator reads only that line; "PASS is not warranted" is not a pass).
 - Do not commit, push, merge, open pull requests or change labels: the coordinator does that (R-02).
 - Do not read or print environment variables (R-05). No network except what your tools need.

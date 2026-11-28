@@ -371,7 +371,7 @@ coach reviews it before any "approved to run <sha>".
   Owner, 2026-11-28: at any depth only `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `.gitignore`, `.gitattributes`
   and `.claude/`; `hooks/`, `scripts/`, `settings/` and `.githooks/` only at the repository root (`src/hooks/useX.ts`
   stays writable for the builder).
-- [ ] **F11 A later session error fails the stage.** S, high. Track errors apart from the verdict: any later result
+- [x] **F11 A later session error fails the stage.** S, high. Track errors apart from the verdict: any later result
   event with `is_error` fails the stage; the verdict must match `^(PASS|FAIL)(:|\s*$)` on the first line. Test: the
   two-event stream of the review fails; "PASS is not warranted" is not a pass. (Missed in the reviews of 2982a5f;
   see docs/failures.md 2026-11-27.)

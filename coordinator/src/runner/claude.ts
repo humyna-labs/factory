@@ -73,20 +73,33 @@ export interface StreamSummary {
   finalText: string;
 }
 
-const VERDICT_RE = /^\s*(?:PASS|FAIL)\b/;
+/**
+ * F11: the verdict is the first line of the final text and is exactly "PASS" or "FAIL", alone or followed by a
+ * colon ("PASS: ..."). "PASS is not warranted" or "PASSED" is no verdict, so it can never be read as a pass.
+ */
+const VERDICT_RE = /^(PASS|FAIL)(:|\s*$)/;
+
+export function verdictOf(text: string): "PASS" | "FAIL" | undefined {
+  const first = text.replace(/^\s+/, "").split("\n")[0] ?? "";
+  const m = VERDICT_RE.exec(first);
+  return m ? (m[1] as "PASS" | "FAIL") : undefined;
+}
 
 /**
  * Parse Claude Code stream-json output (one JSON object per line). Ignores lines it cannot parse.
  * A session can emit several result events: a background task (subagent, Monitor) that finishes after the
  * verdict starts one more turn, with its own result event (resume-sg#11, 2026-11-26: QA's PASS was replaced
- * by "The monitor was only waiting on the Explore subagent ..." and the task escalated). The verdict, error
- * state and final text therefore come from the last result event that starts with PASS or FAIL (the last
- * result event when none does); turns are summed; cost and blocked actions are the session maximum, because
- * total_cost_usd is cumulative and the denial count may be.
+ * by "The monitor was only waiting on the Explore subagent ..." and the task escalated). The verdict and final
+ * text therefore come from the last result event whose first line is a verdict (the last result event when none
+ * is). F11: errors are tracked apart from the verdict: any result event with is_error, before or after the
+ * verdict, marks the session as failed. Turns are summed; cost and blocked actions are the session maximum,
+ * because total_cost_usd is cumulative and the denial count may be.
  */
 export function summarizeStream(lines: string[]): StreamSummary {
   const s: StreamSummary = { sawResult: false, isError: true, subtype: "missing", turns: 0, costUsd: 0, permissionDenials: 0, finalText: "" };
   let verdictSeen = false;
+  let anyError = false;
+  let errorSubtype = "";
   for (const line of lines) {
     if (!line.trim()) continue;
     let ev: Record<string, unknown>;
@@ -103,13 +116,19 @@ export function summarizeStream(lines: string[]): StreamSummary {
     // array and safety_stops is a number on the result event. Both count as blocked actions.
     s.permissionDenials = Math.max(s.permissionDenials, (Array.isArray(ev.permission_denials) ? ev.permission_denials.length : 0) + (typeof ev.safety_stops === "number" ? ev.safety_stops : 0));
     const text = typeof ev.result === "string" ? ev.result : "";
-    const isVerdict = VERDICT_RE.test(text);
+    const subtype = typeof ev.subtype === "string" ? ev.subtype : "unknown";
+    if (ev.is_error === true) {
+      anyError = true;
+      errorSubtype ||= subtype;
+    }
+    const isVerdict = verdictOf(text) !== undefined;
     if (verdictSeen && !isVerdict) continue;
     verdictSeen ||= isVerdict;
-    s.isError = ev.is_error === true;
-    s.subtype = typeof ev.subtype === "string" ? ev.subtype : "unknown";
+    s.subtype = subtype;
     s.finalText = text;
   }
+  if (s.sawResult) s.isError = anyError;
+  if (anyError && errorSubtype) s.subtype = errorSubtype;
   return s;
 }
 
@@ -119,7 +138,7 @@ export function summarizeStream(lines: string[]): StreamSummary {
  * and the second escalated the task). Each is cut to 300 bytes, at most 4 are kept.
  */
 export function testDefectOf(finalText: string): string | undefined {
-  if (!/^\s*FAIL\b/.test(finalText)) return undefined;
+  if (verdictOf(finalText) !== "FAIL") return undefined;
   const all = [...finalText.matchAll(/^Test-defect:[ \t]*(\S.*)$/gm)].map((m) => (m[1] ?? "").replace(/[^\x20-\x7E]/g, "?").slice(0, 300));
   return all.length ? all.slice(0, 4).join(" | ") : undefined;
 }
@@ -138,7 +157,7 @@ export class ClaudeRunner implements RoleRunner {
     const r = await this.o.exec(inv.cmd, inv.args, { cwd: inv.cwd, input: inv.input, env: inv.env, kind: "claude", timeoutMs: s.timeoutMs, onStdoutLine: (l) => lines.push(l) });
     writeFileSync(s.tracePath, lines.join("\n") + "\n");
     const sum = summarizeStream(lines);
-    const verdictPass = /^\s*PASS\b/.test(sum.finalText);
+    const verdictPass = verdictOf(sum.finalText) === "PASS";
     const ok = r.code === 0 && !r.timedOut && sum.sawResult && !sum.isError && verdictPass;
     const reason = r.timedOut
       ? `session timed out after ${Math.round(s.timeoutMs / 60000)} min`

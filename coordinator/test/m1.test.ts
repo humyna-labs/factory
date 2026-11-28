@@ -81,14 +81,16 @@ describe("Test-defect: the builder can send a defective test back to QA twice pe
     expect(transition("review", false, ctx(1, true, 0))).toBe("impl");
   });
   it("reads the Test-defect line only from a FAIL final message", () => {
-    expect(testDefectOf("FAIL tests contradict the issue\nBlocker: x\nTest-defect: tests/unit/a.test.tsx:158 matches two links named Start\n")).toBe("tests/unit/a.test.tsx:158 matches two links named Start");
-    expect(testDefectOf("PASS done\nTest-defect: tests/unit/a.test.tsx:1 x")).toBeUndefined();
-    expect(testDefectOf("FAIL something else")).toBeUndefined();
-    expect(testDefectOf("FAIL x\nTest-defect: 开始定制 " + "y".repeat(400))).toMatch(/^\?{4} y+$/);
-    expect(testDefectOf("FAIL x\nTest-defect: " + "y".repeat(400))?.length).toBe(300);
+    expect(testDefectOf("FAIL: tests contradict the issue\nBlocker: x\nTest-defect: tests/unit/a.test.tsx:158 matches two links named Start\n")).toBe("tests/unit/a.test.tsx:158 matches two links named Start");
+    expect(testDefectOf("PASS: done\nTest-defect: tests/unit/a.test.tsx:1 x")).toBeUndefined();
+    expect(testDefectOf("FAIL: something else")).toBeUndefined();
+    // F11: only a first-line verdict counts
+    expect(testDefectOf("FAILED to run\nTest-defect: tests/unit/a.test.tsx:1 x")).toBeUndefined();
+    expect(testDefectOf("FAIL: x\nTest-defect: 开始定制 " + "y".repeat(400))).toMatch(/^\?{4} y+$/);
+    expect(testDefectOf("FAIL: x\nTest-defect: " + "y".repeat(400))?.length).toBe(300);
     // resume-sg#13: every defect reaches QA, not only the first
-    expect(testDefectOf("FAIL two defects\nTest-defect: tests/e2e/a.spec.ts:218 indexOf finds the summary first\nOther text\nTest-defect: tests/unit/b.test.tsx:226 expects separate headings")).toBe("tests/e2e/a.spec.ts:218 indexOf finds the summary first | tests/unit/b.test.tsx:226 expects separate headings");
-    expect(testDefectOf("FAIL many\n" + Array.from({ length: 6 }, (_, i) => `Test-defect: t${i}.ts:1 x`).join("\n"))?.split(" | ").length).toBe(4);
+    expect(testDefectOf("FAIL: two defects\nTest-defect: tests/e2e/a.spec.ts:218 indexOf finds the summary first\nOther text\nTest-defect: tests/unit/b.test.tsx:226 expects separate headings")).toBe("tests/e2e/a.spec.ts:218 indexOf finds the summary first | tests/unit/b.test.tsx:226 expects separate headings");
+    expect(testDefectOf("FAIL: many\n" + Array.from({ length: 6 }, (_, i) => `Test-defect: t${i}.ts:1 x`).join("\n"))?.split(" | ").length).toBe(4);
   });
 
   it("flow: QA re-runs with the builder's reason, then the task finishes (stub roles)", async () => {

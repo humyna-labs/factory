@@ -1,6 +1,6 @@
 // R-04: command assembly for headless Claude Code. No real CLI call here.
 import { describe, expect, it } from "vitest";
-import { buildClaudeInvocation, ClaudeRunner, summarizeStream } from "../src/runner/claude.ts";
+import { buildClaudeInvocation, ClaudeRunner, summarizeStream, verdictOf } from "../src/runner/claude.ts";
 import { loadRoleConfig } from "../src/runner/roles.ts";
 import type { RoleSession } from "../src/runner/types.ts";
 import type { Exec } from "../src/exec.ts";
@@ -83,12 +83,23 @@ describe("stream-json parsing", () => {
   });
   // resume-sg#11 (2026-11-26): a background subagent finished after QA's PASS and started one more turn.
   const res = (o: Record<string, unknown>): string => JSON.stringify({ type: "result", is_error: false, subtype: "success", permission_denials: [], ...o });
-  it("keeps the verdict when a later result event carries no verdict", () => {
+  it("keeps the verdict text when a later result event carries no verdict, but a later error fails the session (F11)", () => {
     const s = summarizeStream([
       res({ num_turns: 35, total_cost_usd: 1.1267, result: "PASS: the tests are written", permission_denials: [{}, {}] }),
       res({ num_turns: 1, total_cost_usd: 1.1453, result: "The monitor was only waiting on the Explore subagent.", is_error: true, subtype: "error_during_execution", permission_denials: [{}] }),
     ]);
-    expect(s).toMatchObject({ sawResult: true, isError: false, subtype: "success", turns: 36, costUsd: 1.1453, permissionDenials: 2, finalText: "PASS: the tests are written" });
+    // F11 (external review of v1.3): errors are tracked apart from the verdict, so this two-event stream fails.
+    expect(s).toMatchObject({ sawResult: true, isError: true, subtype: "error_during_execution", turns: 36, costUsd: 1.1453, permissionDenials: 2, finalText: "PASS: the tests are written" });
+    const clean = summarizeStream([
+      res({ num_turns: 35, total_cost_usd: 1.1267, result: "PASS: the tests are written" }),
+      res({ num_turns: 1, total_cost_usd: 1.1453, result: "The monitor finished." }),
+    ]);
+    expect(clean).toMatchObject({ isError: false, subtype: "success", finalText: "PASS: the tests are written" });
+  });
+  it("F11: an error before the verdict fails the session too, and the verdict is only a first line PASS or FAIL", () => {
+    expect(summarizeStream([res({ num_turns: 40, result: "", is_error: true, subtype: "error_max_turns" }), res({ num_turns: 1, result: "PASS: late" })]).isError).toBe(true);
+    for (const t of ["PASS is not warranted", "PASSED", "Overall: PASS", "pass: x", " FAILURE"]) expect(verdictOf(t), t).toBeUndefined();
+    for (const [t, v] of [["PASS", "PASS"], ["PASS: x", "PASS"], ["FAIL: y\nmore", "FAIL"], ["\n  FAIL", "FAIL"], ["PASS  \nnext", "PASS"]] as const) expect(verdictOf(t), t).toBe(v);
   });
   it("takes a verdict that arrives after a result event without one", () => {
     const s = summarizeStream([res({ num_turns: 3, total_cost_usd: 0.2, result: "Waiting for the subagent." }), res({ num_turns: 2, total_cost_usd: 0.3, result: "FAIL: one test\nTest-defect: a.ts:1 x" })]);
@@ -124,7 +135,7 @@ describe("ClaudeRunner", () => {
     let seenKind = "";
     const fakeExec: Exec = async (_c, _a, o) => {
       seenKind = o?.kind ?? "";
-      o?.onStdoutLine?.(JSON.stringify({ type: "result", is_error: false, num_turns: 7, total_cost_usd: 0.5, result: "PASS done", permission_denials: [{}] }));
+      o?.onStdoutLine?.(JSON.stringify({ type: "result", is_error: false, num_turns: 7, total_cost_usd: 0.5, result: "PASS: done", permission_denials: [{}] }));
       return { code: 0, stdout: "", stderr: "", timedOut: false };
     };
     const runner = new ClaudeRunner({ exec: fakeExec, loadRole: loadRoleConfig, ...opts });
@@ -132,7 +143,7 @@ describe("ClaudeRunner", () => {
     expect(await runner.run(s)).toMatchObject({ ok: true, turns: 7, costUsd: 0.5, blockedActions: 1 });
     expect(seenKind).toBe("claude");
     const failing: Exec = async (_c, _a, o) => {
-      o?.onStdoutLine?.(JSON.stringify({ type: "result", is_error: false, num_turns: 1, result: "FAIL tests wrong" }));
+      o?.onStdoutLine?.(JSON.stringify({ type: "result", is_error: false, num_turns: 1, result: "FAIL: tests wrong" }));
       return { code: 0, stdout: "", stderr: "", timedOut: false };
     };
     expect((await new ClaudeRunner({ exec: failing, loadRole: loadRoleConfig, ...opts }).run(s)).ok).toBe(false);
