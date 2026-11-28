@@ -104,6 +104,10 @@ export const PATH_GUARD_CASES: GuardCase[] = [
   b("reviewer", "echo x > src/a.ts", "deny", "B5"),
   b("compliance", "rm notes.txt", "deny", "B5"),
   b("compliance", "/workspace/factory/hooks/secret-guard.sh --scan-git", "allow", "B0"),
+  // resume-sg#52 (factory#20): the scanner chained with a command that names a harness path is blocked as a whole.
+  b("compliance", "/workspace/factory/hooks/secret-guard.sh --scan-git; echo; cat .factory/factory.yaml", "deny", "B2"),
+  b("compliance", "/workspace/factory/hooks/secret-guard.sh --scan-git; git diff main...HEAD --name-only | grep -E '(ci/|\\.github/)'", "deny", "B2"),
+  b("compliance", "cd /tmp/factory-guard-wt && /workspace/factory/hooks/secret-guard.sh --scan-git", "allow", "B0"),
   b("gardener", "ls", "deny", "B6"),
   b("builder", "ln -s /etc/hosts src/h.ts", "deny", "B7"),
   b("qa", "cd tests && ln -sf ../x y", "deny", "B7"),

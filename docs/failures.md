@@ -325,3 +325,21 @@ Template:
 - Fix: open; queue stopped under the same-failure rule. Owner to choose: QA turn budget (BL-52) or split the issue.
 - Issue: https://github.com/humyna-labs/resume-sg/issues/47
   PR: none
+
+## 2026-11-28 resume-sg#52 fact-check-4: the secret scan never ran, chained with a harness path
+- Symptom: escalated at 00:13 SGT on fff6b5c at the compliance stage, after review 3 passed (0 blockers, 0 majors)
+  and builder attempt 3 passed every gate (1360 unit, 199 e2e). Compliance (haiku) reported "secret scan not run,
+  blocked by path-guard B2" and failed the stage as G-05 requires. Cost USD 5.50 for the run.
+- Root cause: the role chained `/workspace/factory/hooks/secret-guard.sh --scan-git` in one shell command with
+  `cat .factory/factory.yaml` and with a grep pattern containing `\.github/`. B2 matches harness names anywhere in
+  the command text, so the whole command was denied and the scanner never ran. The scanner alone was always
+  allowed (case "compliance bash allow" in hooks/test/cases.ts); in #11, #41, #44, #47 and #53 the role ran it as a
+  command of its own and passed. The coordinator's draft (factory#20) proposed loosening the guard.
+- Principle: G-05 (a block is a stop sign), P-02 (fix the harness), P-11 (security paths keep strict gates).
+- Fix: owner, 2026-11-28 (factory#20 option A): only the role prompt changes, no hook rule is loosened.
+  `roles/compliance.md` 1.1 says the first shell command is exactly the scanner, with nothing chained, and harness
+  files are read with the Read tool. Tests: `hooks/test/compliance-scan.test.ts` (fails on the 1.0 prompt and on a
+  prompt whose code block chains a harness path) and three B2 cases in `hooks/test/cases.ts` (the two chained forms
+  of #52 are denied, a `cd` prefix is allowed).
+- Issue: https://github.com/humyna-labs/resume-sg/issues/52, https://github.com/humyna-labs/factory/issues/20
+  PR: none (resume-sg#52 is restarted after the coach's review and the owner's approval of the run SHA)

@@ -9,7 +9,7 @@ writes: []
 ---
 # Role: Compliance
 
-Version 1.0. Principles: P-11 and the counter-example in docs/principles.md (privacy and
+Version 1.1. Principles: P-11 and the counter-example in docs/principles.md (privacy and
 security paths keep strict gates).
 
 ## Mission
@@ -19,8 +19,23 @@ Check the branch diff for privacy, secret, licence and security-header problems.
 ## Inputs
 
 - The task prompt: issue, worktree, base branch, report path.
-- The diff (`git diff <base>...HEAD`), `public/_headers`, `.factory/factory.yaml` (read only).
+- The diff (`git diff <base>...HEAD`), `public/_headers`, `.factory/factory.yaml` (read only). Read
+  `.factory/factory.yaml` and any other harness file with the Read tool, never in a shell command.
 - Scanners you may run read-only: `/workspace/factory/hooks/secret-guard.sh --scan-git`.
+
+## Secret scan: first, and as a command of its own
+
+Your first shell command is exactly this, with nothing before or after it:
+
+```
+/workspace/factory/hooks/secret-guard.sh --scan-git
+```
+
+No `;`, `&&`, `||`, `|` or a second command in the same call. Path-guard rule B2 blocks a whole
+shell command whose text names a harness path (`.github/`, `.githooks`, `.factory/`, `.claude/`,
+`feature_list.json`, `CODEOWNERS`), also inside a grep pattern or an echo. A chained command that
+names one is blocked as a whole, and then the scan did not run (resume-sg#52, factory#20). Run your
+other checks as separate commands afterwards.
 
 ## Outputs (exact paths)
 
