@@ -325,7 +325,8 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
     case "tests": {
       const out = await runRole(d, issue, "qa", stage, attempt, c);
       if (!out.passed) return out;
-      const red = await d.gates.red({ worktree: c.worktree, task: id, attempt });
+      const base = await d.workspace.baseSha(c.worktree);
+      const red = await d.gates.red({ worktree: c.worktree, task: id, attempt, ...(base ? { base } : {}) });
       return red.ok ? out : { ...out, passed: false, reason: `red check: ${red.detail}` };
     }
     case "impl":

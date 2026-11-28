@@ -343,3 +343,18 @@ Template:
   of #52 are denied, a `cd` prefix is allowed).
 - Issue: https://github.com/humyna-labs/resume-sg/issues/52, https://github.com/humyna-labs/factory/issues/20
   PR: none (resume-sg#52 is restarted after the coach's review and the owner's approval of the run SHA)
+
+## 2026-11-28 resume-sg#48 match-analysis: the red check after a QA rewrite ran on a committed implementation
+- Symptom: escalated at 15:34 SGT on fff6b5c at the tests stage with "red check: unit passed before implementation:
+  tests do not fail first". Builder attempt 1 had passed every gate; review 1 found a major; builder attempt 2
+  reverted it and reported two test defects; QA rewrote one test. Cost USD 3.44. The coordinator's draft
+  (factory#21, a Grep tool for QA) did not name the cause.
+- Root cause: `runStage` "tests" runs `ShellGates.red` on the task worktree. After a rewrite, that worktree still holds
+  the committed builder attempt 1 (attempt 2 failed and was reset), so the new tests pass there.
+- Principle: P-06 (tests fail first), P-02.
+- Fix: F16 (owner, 2026-11-28): the red check runs only on the task baseline plus the task's `tests/` and `evals/`
+  changes, in a temporary worktree that is always removed. Test: coordinator/test/red-baseline.test.ts (fails
+  before the fix; mutation: running the gate on the task worktree again, or not applying the test diff, turns it
+  red). The #48 restart on 17:34 SGT reached the owner as PR #66.
+- Issue: https://github.com/humyna-labs/resume-sg/issues/48, https://github.com/humyna-labs/factory/issues/21
+  PR: https://github.com/humyna-labs/resume-sg/pull/66

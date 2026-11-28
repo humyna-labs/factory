@@ -102,7 +102,7 @@ async function main(argv: string[]): Promise<number> {
     cfg,
     gh,
     runner: new ClaudeRunner({ exec, loadRole: loadRoleConfig, baseBranch: cfg.base_branch, reportsDir: paths.reportsDir, guardLog: paths.guardLog, escalationsDir: paths.escalationsDir }),
-    gates: new ShellGates(cfg, exec),
+    gates: new ShellGates(cfg, exec, { tmpRoot: join(paths.runsDir, "red") }),
     workspace: new GitWorkspace(exec, { repoDir, worktreesDir: paths.worktreesDir, baseBranch: cfg.base_branch, remote: "origin", pushHookPath: factoryPath(".githooks") }),
     exec,
     ledger: new RunsCsvWriter(paths.runsCsv),

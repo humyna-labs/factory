@@ -1,11 +1,26 @@
 // Runs the product's own gate commands from .factory/factory.yaml in the worktree.
 // Written and unit-tested with a fake exec; not run against a real product in Phase 1.
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import type { FactoryConfig } from "../config.ts";
 import type { Exec } from "../exec.ts";
 import { factoryPath } from "../paths.ts";
 import type { GateContext, GateResult, GateRunner } from "./types.ts";
 
 const TIMEOUT_MS = 20 * 60_000;
+
+/** Owner, 2026-11-28 (F16): dependencies of the baseline worktree come from the local store only. */
+export const BASELINE_INSTALL = "pnpm install --offline --frozen-lockfile";
+/** The paths QA owns (R5): only these are brought from the task branch onto the baseline. */
+export const TEST_PATHS = ["tests", "evals"] as const;
+
+export interface ShellGatesOptions {
+  remote?: string;
+  /** Owner, 2026-11-28: the temporary baseline worktrees live under /workspace (the CLI passes <runs>/red). */
+  tmpRoot?: string;
+  /** Command that installs dependencies in the baseline worktree (default BASELINE_INSTALL). */
+  install?: string;
+}
 
 /** True when a test runner's output reports failing tests or test files (Vitest and Playwright summaries). */
 export function reportsFailures(output: string): boolean {
@@ -18,9 +33,31 @@ export class ShellGates implements GateRunner {
   readonly name = "shell" as const;
   private readonly cfg: FactoryConfig;
   private readonly run: Exec;
-  constructor(cfg: FactoryConfig, run: Exec) {
+  private readonly remote: string;
+  private readonly install: string;
+  private readonly tmpRoot: string;
+  constructor(cfg: FactoryConfig, run: Exec, opts: ShellGatesOptions = {}) {
     this.cfg = cfg;
     this.run = run;
+    this.remote = opts.remote ?? "origin";
+    this.install = opts.install ?? BASELINE_INSTALL;
+    this.tmpRoot = opts.tmpRoot ?? "/workspace/runs/red";
+  }
+
+  /** The task baseline: the base SHA recorded at task start, else the merge base with the remote base branch. */
+  private async baseline(ctx: GateContext): Promise<{ sha?: string; detail: string }> {
+    if (ctx.base && /^[0-9a-f]{40}$/.test(ctx.base)) {
+      const ok = await this.git(ctx.worktree, ["cat-file", "-e", `${ctx.base}^{commit}`]);
+      if (ok.code === 0) return { sha: ctx.base, detail: "recorded" };
+    }
+    const mb = await this.git(ctx.worktree, ["merge-base", "HEAD", `${this.remote}/${this.cfg.base_branch}`]);
+    const sha = mb.stdout.trim();
+    if (mb.code === 0 && /^[0-9a-f]{40}$/.test(sha)) return { sha, detail: "merge-base" };
+    return { detail: `no task baseline (no recorded base; git merge-base exit ${mb.code}): ${mb.stderr.trim().slice(0, 160)}` };
+  }
+
+  private async git(cwd: string, args: string[], input?: string) {
+    return this.run("git", args, { cwd, kind: "git", timeoutMs: 120_000, ...(input !== undefined ? { input } : {}) });
   }
 
   private async one(name: string, command: string, cwd: string): Promise<GateResult & { output: string }> {
@@ -30,8 +67,43 @@ export class ShellGates implements GateRunner {
     return { name, ok: r.code === 0 && !r.timedOut, detail: r.timedOut ? "timed out" : `exit ${r.code}: ${tail.slice(0, 160)}`, output };
   }
 
+  /**
+   * F16 (resume-sg#48): the red check runs on the task baseline plus the task's test changes, never on the task
+   * worktree. After a QA rewrite the worktree can already hold a committed builder attempt, and then every test
+   * passes there. The baseline is the base SHA recorded at task start (else the merge base of HEAD and the remote
+   * base branch); only tests/ and evals/ are
+   * brought over from HEAD. The temporary worktree is always removed; the task worktree is never changed.
+   */
   async red(ctx: GateContext): Promise<GateResult> {
-    const g = await this.one(this.cfg.red_gate, this.cfg.gates[this.cfg.red_gate], ctx.worktree);
+    const fail = (detail: string): GateResult => ({ name: "red", ok: false, detail });
+    const b = await this.baseline(ctx);
+    if (!b.sha) return fail(b.detail);
+    const base = b.sha;
+    mkdirSync(this.tmpRoot, { recursive: true });
+    // Unique per task and attempt; removed in finally. The gate runs there through one(), with the same minimal
+    // environment and timeout as every other gate (R-05, R-12).
+    const dir = mkdtempSync(join(this.tmpRoot, `${ctx.task.replace(/[^A-Za-z0-9_-]/g, "-")}-a${ctx.attempt}-`));
+    try {
+      const add = await this.git(ctx.worktree, ["worktree", "add", "-q", "--detach", dir, base]);
+      if (add.code !== 0) return fail(`baseline worktree not created: ${add.stderr.trim().slice(0, 160)}`);
+      const diff = await this.git(ctx.worktree, ["diff", "--binary", base, "HEAD", "--", ...TEST_PATHS]);
+      if (diff.code !== 0) return fail(`test changes not read: ${diff.stderr.trim().slice(0, 160)}`);
+      if (diff.stdout.trim()) {
+        const apply = await this.git(dir, ["apply", "--whitespace=nowarn"], diff.stdout);
+        if (apply.code !== 0) return fail(`test changes do not apply to the baseline: ${apply.stderr.trim().slice(0, 160)}`);
+      }
+      const inst = await this.one("install", this.install, dir);
+      if (!inst.ok) return fail(`baseline install failed (${this.install}): ${inst.detail}`);
+      return await this.redOn(dir);
+    } finally {
+      await this.git(ctx.worktree, ["worktree", "remove", "--force", dir]);
+      rmSync(dir, { recursive: true, force: true });
+      await this.git(ctx.worktree, ["worktree", "prune"]);
+    }
+  }
+
+  private async redOn(dir: string): Promise<GateResult> {
+    const g = await this.one(this.cfg.red_gate, this.cfg.gates[this.cfg.red_gate], dir);
     if (g.ok) return { name: "red", ok: false, detail: `${g.name} passed before implementation: tests do not fail first` };
     // jd2cv-m1 (resume-sg#4): a runner that crashes before any test runs (missing package, bad
     // config) also exits non-zero. Red means the run reached the tests and reported failures.

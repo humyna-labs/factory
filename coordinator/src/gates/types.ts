@@ -8,6 +8,8 @@ export interface GateContext {
   worktree: string;
   task: string;
   attempt: number;
+  /** F16: the base SHA recorded when the task worktree was created (red check baseline). */
+  base?: string;
 }
 
 /** Deterministic checks the coordinator runs itself (spec 3.4: "independently re-run"). */

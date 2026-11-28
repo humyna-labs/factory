@@ -36,7 +36,13 @@ describe("red check needs failing tests, not a crashed runner", () => {
     expect(reportsFailures("")).toBe(false);
   });
   const cfg = parseFactoryConfig("version: 1\nproduct: p\nrepo: humyna-labs/p\nhigh_risk_paths: [package.json]\ngates: { typecheck: t, lint: l, unit: u, e2e: e }\ndeploy: { provider: cloudflare-pages, mode: git-integration }\n");
-  const gates = (code: number, out: string) => new ShellGates(cfg, (async () => ({ code, stdout: out, stderr: "", timedOut: false })) as Exec);
+  // F16: git calls (merge-base, worktree, diff) and the baseline install succeed; the red gate gives `code` and `out`.
+  const SHA = "a".repeat(40);
+  const gates = (code: number, out: string) =>
+    new ShellGates(cfg, (async (cmd: string, args: string[]) =>
+      cmd === "git" ? { code: 0, stdout: args[0] === "merge-base" ? `${SHA}\n` : "", stderr: "", timedOut: false }
+      : args[1] === "pnpm install --offline --frozen-lockfile" ? { code: 0, stdout: "", stderr: "", timedOut: false }
+      : { code, stdout: out, stderr: "", timedOut: false }) as Exec);
   it("ShellGates.red: crash is not red, failing tests are, passing tests are not", async () => {
     const ctx = { worktree: "/tmp", task: "p#1", attempt: 1 };
     expect((await gates(1, VITEST_CRASH).red(ctx)).ok).toBe(false);

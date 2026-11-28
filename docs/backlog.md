@@ -386,6 +386,14 @@ coach reviews it before any "approved to run <sha>".
   `events.jsonl`. Test: a partial line does not swallow the next event.
 - [ ] **F03 Pre-push scans every outgoing commit.** S, high. `gitleaks` over `base..HEAD`, not only the tree. Test: a
   token added and then removed blocks the push.
+- [x] **F16 The fail-first check runs on the task baseline plus the new tests.** S, high. Owner, 2026-11-28
+  (resume-sg#48): after a QA rewrite the red check ran on the task worktree, which already held a committed builder
+  attempt, so every test passed ("tests do not fail first"). `ShellGates.red` now creates a temporary worktree at
+  the base SHA recorded when the task worktree was created (else `git merge-base HEAD origin/<base>`), under
+  `<runs>/red/` with a unique name, removed in `finally`; it applies the branch diff of `tests/` and `evals/`,
+  installs with `pnpm install --offline --frozen-lockfile` and runs the red gate there with the usual gate
+  environment (owner, 2026-11-28). Never skipped; the task worktree is never changed. Test:
+  coordinator/test/red-baseline.test.ts.
 
 ### Batch 2 (v1.4 / L4): after the resume-sg launch, before open-sourcing
 - [ ] **F01/F02 Gates and agent tools in a separate sandbox.** L, high. Candidate code read-only, no token, no

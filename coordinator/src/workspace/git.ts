@@ -1,11 +1,14 @@
 // One git worktree per task (R-03). The coordinator creates it; every role runs with it as cwd.
 // BL-05 / W2-05: product clones push through the factory pre-push hook, the worktree starts from
 // the freshly fetched remote base, and finished worktrees are removed.
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChildKind } from "../env.ts";
 import type { Exec } from "../exec.ts";
 import type { Issue, LedgerRole } from "../types.ts";
+
+/** F16: file in the task worktree's git dir that holds the base SHA recorded at task start. */
+export const BASE_FILE = "factory-base-sha";
 
 export interface WorkspaceOptions {
   repoDir: string;
@@ -53,7 +56,21 @@ export class GitWorkspace {
     if (existsSync(worktree)) return { worktree, branch, reused: true };
     await this.git(this.o.repoDir, ["fetch", "-q", this.o.remote]);
     await this.git(this.o.repoDir, ["worktree", "add", "-q", "-B", branch, worktree, this.base]);
+    // F16: record the task's base SHA in the worktree's own git dir (untracked, gone with the worktree).
+    const sha = (await this.git(worktree, ["rev-parse", "HEAD"])).trim();
+    writeFileSync(join((await this.git(worktree, ["rev-parse", "--absolute-git-dir"])).trim(), BASE_FILE), `${sha}\n`);
     return { worktree, branch, reused: false };
+  }
+
+  /** F16: the base SHA recorded when the task worktree was created, or undefined (older worktree, unreadable). */
+  async baseSha(worktree: string): Promise<string | undefined> {
+    try {
+      const file = join((await this.git(worktree, ["rev-parse", "--absolute-git-dir"])).trim(), BASE_FILE);
+      const sha = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
+      return /^[0-9a-f]{40}$/.test(sha) ? sha : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Remove a finished worktree; the local branch stays for diagnosis. */
