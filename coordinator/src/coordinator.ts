@@ -15,7 +15,7 @@ import type { Exec } from "./exec.ts";
 import { featureOf, markFeature } from "./features.ts";
 import { decideGrants, grantedChanges, type Grant } from "./grants.ts";
 import type { GateRunner } from "./gates/types.ts";
-import type { GitHubAdapter } from "./github/types.ts";
+import { FACTORY_LOGIN, type GitHubAdapter, type OpenPullRequest } from "./github/types.ts";
 import { mergeLowRisk } from "./merge.ts";
 import type { RunPaths } from "./paths.ts";
 import { appendReportIndex, checkReport, reportPath } from "./report.ts";
@@ -124,8 +124,8 @@ function rebuild(c: TaskCtx): void {
 /**
  * Restart a task from the tests stage after its issue was revised (jd2cv-m1, owner 15:25 SGT: resume-sg#8 was
  * revised to brief v5.2 after QA had written tests for v4). The coordinator, not a human, moves the label (R-02):
- * it records a task-restart event, removes the task worktree (the next run starts from the fetched base and the
- * branch is reset there), and sets factory:ready. Refuses an open PR's task (re-run it instead) and a closed issue.
+ * it records a task-restart event, removes the task worktree (the next run starts from the fetched base on a new
+ * branch factory/<repo>-<n>-r<k>, F04; its PR closes the earlier one), and sets factory:ready. Refuses an open PR's task (re-run it instead) and a closed issue.
  */
 export async function restartTask(d: Deps, issue: Issue, reason: string): Promise<Issue> {
   if (issue.state !== "open") throw new Error(`${taskId(issue)} is closed; nothing to restart`);
@@ -146,7 +146,9 @@ export async function runTask(d: Deps, issue: Issue): Promise<TaskResult> {
   c.grants = gd.grants;
   if (gd.grants.length || gd.refused) d.events.write({ ts: isoUtc(d.now()), type: "grants", task: id, granted: gd.grants.join(","), ...(gd.refused ? { refused: gd.refused } : {}) });
   const resumeAt = labelledStage(issue);
-  const { worktree, branch } = await d.workspace.prepare(issue);
+  // F04: restarts so far decide the branch (a restart never reuses a pushed branch).
+  const restarts = readEvents(d.paths.events).filter((e) => e.type === "task-restart" && e.task === id).length;
+  const { worktree, branch } = await d.workspace.prepare(issue, restarts);
   let state: State;
 
   if (resumeAt === undefined) {
@@ -319,6 +321,24 @@ async function runRole(d: Deps, issue: Issue, role: Role, stage: Stage, attempt:
   return { passed: true, reason: r.summary, ...base, ...fix };
 }
 
+/**
+ * F04 (owner, 2026-11-28): a restart pushes to a new branch, so its new PR supersedes the open PR of the earlier
+ * branch. The coordinator closes (never merges) only PRs it opened itself: author FACTORY_LOGIN and a head branch
+ * factory/<repo>-<n> or factory/<repo>-<n>-r<k> of this task. Each gets a comment with the new PR's link.
+ */
+export function supersededPulls(open: OpenPullRequest[], issue: Pick<Issue, "repo" | "number">, current: string): OpenPullRequest[] {
+  const prefix = `factory/${issue.repo}-${issue.number}`;
+  const ownBranch = (h: string) => h === prefix || (h.startsWith(`${prefix}-r`) && /^[0-9]+$/.test(h.slice(prefix.length + 2)));
+  return open.filter((p) => p.author === FACTORY_LOGIN && p.head.startsWith("factory/") && ownBranch(p.head) && p.head !== current);
+}
+
+async function closeSuperseded(d: Deps, issue: Issue, current: string, url: string): Promise<void> {
+  for (const old of supersededPulls(await d.gh.listOpenPullRequests(issue.owner, issue.repo), issue, current)) {
+    await d.gh.closePullRequest(issue.owner, issue.repo, old.number, `Superseded by ${url}: the task was restarted on the new branch ${current} (no force pushes, F04). Closed by the factory coordinator. Agent-Role: coordinator`);
+    d.events.write({ ts: isoUtc(d.now()), type: "pr-superseded", task: taskId(issue), closed: old.number, by: url });
+  }
+}
+
 async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c: StageCtx): Promise<StageOutcome> {
   const id = taskId(issue);
   switch (stage) {
@@ -359,6 +379,7 @@ async function runStage(d: Deps, issue: Issue, stage: Stage, attempt: number, c:
       const top = c.grants.length ? [`Granted paths changed (Grants: ${c.grants.join(", ")}):`, ...(granted.length ? granted.map((p) => `- ${p}`) : ["- none"]), ""] : [];
       const body = [...top, `Closes #${issue.number}`, "", `Risk: ${decision.risk}`, ...decision.reasons.map((r) => `- ${r}`), "", "Opened by the factory coordinator. Agent-Role: coordinator"].join("\n");
       const pr = await d.gh.findOrOpenPullRequest(issue.owner, issue.repo, c.branch, d.cfg.base_branch, `${issue.title} (#${issue.number})`, body);
+      await closeSuperseded(d, issue, c.branch, pr.url);
       await d.gh.setLabels(issue.owner, issue.repo, pr.number, [`risk:${decision.risk}`], [`risk:${decision.risk === "low" ? "high" : "low"}`]);
       if (decision.risk === "high") {
         await d.gh.comment(issue.owner, issue.repo, pr.number, `Needs human approval (high risk):\n${decision.reasons.map((r) => `- ${r}`).join("\n")}`);

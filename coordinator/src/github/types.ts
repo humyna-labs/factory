@@ -9,6 +9,16 @@ export interface PullRequest {
   labels: string[];
 }
 
+/** F04: the login of the factory's machine account; the coordinator closes only pull requests it opened. */
+export const FACTORY_LOGIN = "humyna-bot";
+
+export interface OpenPullRequest {
+  number: number;
+  url: string;
+  head: string;
+  author: string;
+}
+
 export type ChecksState = "success" | "failure" | "pending";
 
 /** Where a pull request stands; mergeState is GitHub's mergeStateStatus (CLEAN, BLOCKED, DIRTY, ...). */
@@ -29,6 +39,10 @@ export interface GitHubAdapter {
   comment(owner: string, repo: string, number: number, body: string): Promise<void>;
   createIssue(owner: string, repo: string, title: string, body: string, labels: string[]): Promise<{ number: number; url: string }>;
   findOrOpenPullRequest(owner: string, repo: string, head: string, base: string, title: string, body: string): Promise<PullRequest>;
+  /** F04: open pull requests with their head branch and author login. */
+  listOpenPullRequests(owner: string, repo: string): Promise<OpenPullRequest[]>;
+  /** F04: close (never merge) a pull request with a comment. Only for the coordinator's own superseded PRs. */
+  closePullRequest(owner: string, repo: string, pr: number, comment: string): Promise<void>;
   checks(owner: string, repo: string, pr: number): Promise<ChecksState>;
   /** Read-only: whether an auto-merge has landed (queue waits for it, jd2cv-m1). */
   pullRequestState(owner: string, repo: string, pr: number): Promise<PullRequestState>;

@@ -74,7 +74,7 @@ describe("pre-push hook (R-07)", () => {
     expect(out.status).toBe(1);
     expect(out.stderr).toMatch(/user\.email is not set/);
   });
-  it("an update after a re-run on a fresh base skips base commits already on the remote (resume-sg#6)", () => {
+  it("an update that merged the fresh base skips base commits already on the remote (resume-sg#6; F04: fast-forward only)", () => {
     const dir = mkdtempSync(join(tmpdir(), "factory-prepush-rerun-"));
     const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
     const commit = (msg: string, file: string, author?: string) => {
@@ -94,7 +94,15 @@ describe("pre-push hook (R-07)", () => {
     git("checkout", "-q", "main");
     const merged = commit("Info pages (#5)", "b.txt", "Someone <someone@localhost>");
     const push = (tip: string) => spawnSync("bash", [HOOK, "origin", GOOD_URL], { cwd: dir, encoding: "utf8", input: `refs/heads/factory/p-6 ${tip} refs/heads/factory/p-6 ${oldTip}\n` });
-    git("checkout", "-q", "-B", "factory/p-6", "main");
+    // F04: a re-run on a fresh base that drops the old tip is not a fast-forward and is refused.
+    git("checkout", "-q", "-b", "rerun", "main");
+    const rerunTip = commit("feat: re-run\n\nAgent-Role: builder", "c0.txt");
+    git("update-ref", "refs/remotes/origin/main", merged);
+    expect(push(rerunTip).stderr).toMatch(/not a fast-forward/);
+    git("update-ref", "refs/remotes/origin/main", base);
+    // The branch keeps its old tip and merges the base in (as the coordinator does), then adds its commit.
+    git("checkout", "-q", "factory/p-6");
+    git("merge", "-q", "--no-ff", "--no-edit", "-m", "Merge origin/main into factory/p-6", "-m", "Agent-Role: coordinator", "main");
     const newTip = commit("feat: re-run\n\nAgent-Role: builder", "c.txt");
     // the merged commit is not on a remote-tracking ref yet: it is checked and refused
     expect(push(newTip).stderr).toMatch(/REJECTED: commit [0-9a-f]+ (has no|is not authored)/);

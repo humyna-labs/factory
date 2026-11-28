@@ -355,9 +355,12 @@ from the operator's container answer of 2026-11-27 10:45 SGT (owner, 11:30 SGT).
 ### Batch 1 (v1.3.1): small code fixes at the next idle point between tasks, never mid-task
 Owner, 11:30 SGT: do it tonight when the queue is empty; list the plan for the owner first; after the work, the
 coach reviews it before any "approved to run <sha>".
-- [ ] **F04 No force pushes.** S, high. Drop `--force-with-lease`; pre-push rejects non-fast-forward updates; a
+- [x] **F04 No force pushes.** S, high. Drop `--force-with-lease`; pre-push rejects non-fast-forward updates; a
   restarted task pushes to a new branch `factory/<product>-<n>-r<k>`. Test: a divergent update is rejected; a
-  restart uses `-r2`.
+  restart uses `-r2`. Owner, 2026-11-28: before the push the coordinator fetches the remote branch and merges
+  (never rebases) commits it lacks, such as the owner's "Update branch" merge commit; the new PR of a restart closes
+  the earlier one with a link, only when the coordinator opened it (author humyna-bot, head `factory/`). Tests:
+  coordinator/test/no-force-push.test.ts, pre-push P5 cases in hooks/test/symlink-guard.test.ts.
 - [ ] **F07 Scope check sees the rename source.** S, high. `changedFiles` checks the source of a rename too (or uses
   `--no-renames`). Test: `R  src/x.ts <- tests/y.ts` is out of scope for the builder.
 - [ ] **F08 No quoted file names in the risk check.** S, high. `filesChangedFromBase` uses

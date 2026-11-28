@@ -74,6 +74,41 @@ const CASES: Case[] = [
   ["pre-push: branch with a symlink", (r) => { const x = repo(true); return push(r, x.dir, x.sha).status ?? -1; }, 1],
   ["pre-push: a remote commit git does not know fails closed", (r) => { const x = repo(false); return push(r, x.dir, x.sha, { remoteSha: "1".repeat(40) }).status ?? -1; }, 1],
   [
+    "pre-push: a broken remote-tracking ref makes the enumeration fail, and that fails closed (P2)",
+    (r) => {
+      const x = repo(false);
+      mkdirSync(join(x.dir, ".git", "refs", "remotes", "origin"), { recursive: true });
+      writeFileSync(join(x.dir, ".git", "refs", "remotes", "origin", "bad"), `${"3".repeat(40)}\n`);
+      return push(r, x.dir, x.sha).status ?? -1;
+    },
+    1,
+  ],
+  [
+    "pre-push: an update that is not a fast-forward of the remote tip is rejected (P5, F04)",
+    (r) => {
+      const x = repo(false);
+      const first = x.sha;
+      x.git("checkout", "-q", "--orphan", "other");
+      writeFileSync(join(x.dir, "b.txt"), "b");
+      x.git("add", "-A");
+      x.git("commit", "-q", "-m", "y\n\nAgent-Role: builder");
+      return push(r, x.dir, x.git("rev-parse", "HEAD").stdout.trim(), { remoteSha: first }).status ?? -1;
+    },
+    1,
+  ],
+  [
+    "pre-push: a fast-forward update of the remote tip is accepted (P5, F04)",
+    (r) => {
+      const x = repo(false);
+      const first = x.sha;
+      writeFileSync(join(x.dir, "c.txt"), "c");
+      x.git("add", "-A");
+      x.git("commit", "-q", "-m", "z\n\nAgent-Role: builder");
+      return push(r, x.dir, x.git("rev-parse", "HEAD").stdout.trim(), { remoteSha: first }).status ?? -1;
+    },
+    0,
+  ],
+  [
     "pre-push: a new branch whose tip a remote-tracking ref already has is still inspected",
     (r) => {
       const x = repo(true);
@@ -140,7 +175,7 @@ describe("symlink guard (W2-03)", () => {
   it("the factory repo itself has no tracked symlink", () => {
     expect(scan(ROOT, ROOT, "--scan-git").status).toBe(0);
   });
-  it.each(["hooks/symlink-guard.sh:L1", "hooks/symlink-guard.sh:L2", "hooks/symlink-guard.sh:L3", ".githooks/pre-push:P1", ".githooks/pre-push:P2", ".githooks/pre-push:P3", ".githooks/pre-push:P4"])("mutation: disabling %s makes a case fail", (spec) => {
+  it.each(["hooks/symlink-guard.sh:L1", "hooks/symlink-guard.sh:L2", "hooks/symlink-guard.sh:L3", ".githooks/pre-push:P1", ".githooks/pre-push:P2", ".githooks/pre-push:P3", ".githooks/pre-push:P4", ".githooks/pre-push:P5"])("mutation: disabling %s makes a case fail", (spec) => {
     const [file, id] = spec.split(":") as [Mutate["file"], string];
     const s = layout({ file, id });
     const failing = CASES.filter(([, f, want]) => f(s) !== want);
@@ -149,7 +184,7 @@ describe("symlink guard (W2-03)", () => {
   it("every rule block in both files is in the mutation list above", () => {
     const ids = (f: string) => [...readFileSync(join(ROOT, f), "utf8").matchAll(/^\s*# RULE ([A-Z][0-9]+) begin/gm)].map((m) => m[1]);
     expect(ids("hooks/symlink-guard.sh")).toEqual(["L1", "L3", "L2"]);
-    expect(ids(".githooks/pre-push")).toEqual(["P4", "P2", "P3", "P1"]);
+    expect(ids(".githooks/pre-push")).toEqual(["P4", "P5", "P2", "P3", "P1"]);
   });
 });
 

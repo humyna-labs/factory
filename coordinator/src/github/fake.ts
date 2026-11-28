@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Issue } from "../types.ts";
-import type { ChecksState, GitHubAdapter, PullRequest, PullRequestState } from "./types.ts";
+import { FACTORY_LOGIN, type ChecksState, type GitHubAdapter, type OpenPullRequest, type PullRequest, type PullRequestState } from "./types.ts";
 
 interface Call {
   op: string;
@@ -16,6 +16,10 @@ export class FakeGitHub implements GitHubAdapter {
   readonly comments = new Map<string, string[]>();
   readonly pulls = new Map<string, PullRequest>();
   checksState: ChecksState = "success";
+  /** Tests (F04): open pull requests that someone else opened, keyed like pulls. */
+  readonly foreignPulls = new Map<string, OpenPullRequest>();
+  /** Tests (F04): pull requests closed through closePullRequest, with their comment. */
+  readonly closedPulls: { number: number; comment: string }[] = [];
   private nextNumber = 1000;
 
   private readonly stateFile: string | undefined;
@@ -102,6 +106,24 @@ export class FakeGitHub implements GitHubAdapter {
     this.prBodies.set(head, body);
     this.persist();
     return pr;
+  }
+
+  async listOpenPullRequests(owner: string, repo: string): Promise<OpenPullRequest[]> {
+    this.record("listOpenPullRequests", owner, repo);
+    const mine = [...this.pulls.entries()]
+      .filter(([k, p]) => k.startsWith(`${owner}/${repo}:`) && !p.merged)
+      .map(([, p]) => ({ number: p.number, url: p.url, head: p.head, author: FACTORY_LOGIN }));
+    const theirs = [...this.foreignPulls.entries()].filter(([k]) => k.startsWith(`${owner}/${repo}:`)).map(([, p]) => p);
+    return [...mine, ...theirs];
+  }
+
+  async closePullRequest(owner: string, repo: string, pr: number, comment: string): Promise<void> {
+    this.record("closePullRequest", owner, repo, pr);
+    for (const m of [this.pulls, this.foreignPulls] as Map<string, { number: number }>[]) {
+      for (const [k, p] of m) if (p.number === pr) m.delete(k);
+    }
+    this.closedPulls.push({ number: pr, comment });
+    this.persist();
   }
 
   async checks(owner: string, repo: string, pr: number): Promise<ChecksState> {

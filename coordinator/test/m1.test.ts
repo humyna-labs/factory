@@ -139,7 +139,8 @@ describe("push authenticates with the gh token, other git calls do not get it", 
     await ws.push("/tmp/w/x", "factory/x-1");
     await ws.changedFiles("/tmp/w/x");
     await ws.filesChangedFromBase("/tmp/w/x");
-    expect(kinds).toEqual(["push:gh", "status:git", "diff:git"]);
+    // F04: the push first asks the remote whether the branch exists (network, so kind gh too).
+    expect(kinds).toEqual(["ls-remote:gh", "push:gh", "status:git", "diff:git"]);
   });
 });
 
@@ -279,8 +280,10 @@ describe("restart a revised task from the tests stage (resume-sg#8, owner 15:25 
     const after = readEvents(r.paths.events).filter((e) => e.task === "resume-sg#501");
     const restartAt = after.findIndex((e) => e.type === "task-restart");
     expect(after.slice(restartAt).find((e) => e.type === "stage-start")).toMatchObject({ stage: "tests", attempt: 1 });
-    const files = spawnSync("git", ["ls-tree", "-r", "--name-only", "factory/resume-sg-501"], { cwd: r.repoDir, encoding: "utf8" }).stdout;
+    // F04: the restart runs on a new branch; the old branch is left as it was (no force push).
+    const files = spawnSync("git", ["ls-tree", "-r", "--name-only", "factory/resume-sg-501-r2"], { cwd: r.repoDir, encoding: "utf8" }).stdout;
     expect(files).not.toContain("old-v4-test.txt");
+    expect(res.prUrl).toBe(r.gh.pulls.get("humyna-labs/resume-sg:factory/resume-sg-501-r2")?.url);
   });
   it("refuses a closed issue and a task that already has a PR", async () => {
     const r = await dryRun((f) => {

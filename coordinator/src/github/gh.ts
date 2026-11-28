@@ -1,7 +1,7 @@
 // gh CLI adapter. Written and unit-tested for command assembly; not run against GitHub in Phase 1.
 import type { Exec } from "../exec.ts";
 import type { Issue } from "../types.ts";
-import type { ChecksState, GitHubAdapter, PullRequest, PullRequestState } from "./types.ts";
+import type { ChecksState, GitHubAdapter, OpenPullRequest, PullRequest, PullRequestState } from "./types.ts";
 
 const TIMEOUT_MS = 60_000;
 
@@ -70,6 +70,15 @@ export class GhGitHub implements GitHubAdapter {
     if (first) return { number: first.number, url: first.url, head, merged: false, autoMerge: first.autoMergeRequest != null, labels: first.labels.map((l) => l.name) };
     const url = (await this.gh(["pr", "create", "-R", R, "--head", head, "--base", base, "--title", title, "--body-file", "-"], body)).trim().split("\n").pop() ?? "";
     return { number: Number(url.split("/").pop()), url, head, merged: false, autoMerge: false, labels: [] };
+  }
+
+  async listOpenPullRequests(owner: string, repo: string): Promise<OpenPullRequest[]> {
+    const rows = JSON.parse(await this.gh(["pr", "list", "-R", `${owner}/${repo}`, "--state", "open", "--limit", "200", "--json", "number,url,headRefName,author"])) as { number: number; url: string; headRefName: string; author?: { login?: string } }[];
+    return rows.map((r) => ({ number: r.number, url: r.url, head: r.headRefName, author: r.author?.login ?? "" }));
+  }
+
+  async closePullRequest(owner: string, repo: string, pr: number, comment: string): Promise<void> {
+    await this.gh(["pr", "close", String(pr), "-R", `${owner}/${repo}`, "--comment", comment]);
   }
 
   async checks(owner: string, repo: string, pr: number): Promise<ChecksState> {

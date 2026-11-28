@@ -49,12 +49,23 @@ export class GitWorkspace {
     return `${this.o.remote}/${this.o.baseBranch}`;
   }
 
-  async prepare(issue: Issue): Promise<{ worktree: string; branch: string; reused: boolean }> {
-    const branch = this.branchFor(issue);
+  /**
+   * F04 (owner, 2026-11-28): no force pushes, so a restarted task pushes to a new branch. The branch follows the
+   * number of restarts of the task: none gives factory/<repo>-<n>, k restarts give factory/<repo>-<n>-r<k+1>. A plain
+   * re-run (same count) keeps its branch and its open PR.
+   */
+  branchForRun(issue: Issue, restarts: number): string {
+    const base = this.branchFor(issue);
+    return restarts > 0 ? `${base}-r${restarts + 1}` : base;
+  }
+
+  async prepare(issue: Issue, restarts = 0): Promise<{ worktree: string; branch: string; reused: boolean }> {
     const worktree = this.worktreeFor(issue);
     if (this.o.pushHookPath) await this.git(this.o.repoDir, ["config", "core.hooksPath", this.o.pushHookPath]);
-    if (existsSync(worktree)) return { worktree, branch, reused: true };
+    // A reused worktree keeps the branch it was created on (factory/<repo>-<n>, or a -r<k> of a restart).
+    if (existsSync(worktree)) return { worktree, branch: (await this.git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"])).trim(), reused: true };
     await this.git(this.o.repoDir, ["fetch", "-q", this.o.remote]);
+    const branch = this.branchForRun(issue, restarts);
     await this.git(this.o.repoDir, ["worktree", "add", "-q", "-B", branch, worktree, this.base]);
     // F16: record the task's base SHA in the worktree's own git dir (untracked, gone with the worktree).
     const sha = (await this.git(worktree, ["rev-parse", "HEAD"])).trim();
@@ -114,10 +125,29 @@ export class GitWorkspace {
     return (await this.git(worktree, ["diff", "--name-only", `${this.base}...HEAD`])).split("\n").filter(Boolean);
   }
 
+  /**
+   * F04 (owner, 2026-11-28): never a force push. If the remote branch has commits the local one lacks (for example
+   * the merge commit of the owner's "Update branch"), they are merged in (never rebased), then the push is a
+   * fast-forward. A merge that does not apply cleanly is aborted and fails the push.
+   */
   async push(worktree: string, branch: string): Promise<void> {
-    // The push alone gets GH_TOKEN: the credential helper is `gh auth git-credential`, and the
+    // Network calls get GH_TOKEN (kind "gh"): the credential helper is `gh auth git-credential`, and the
     // plain git env (R-05) has no token, so the first live push failed (jd2cv-m1, resume-sg#4).
     // Roles never reach this code; their settings deny git push.
-    await this.git(worktree, ["push", "-q", "--force-with-lease", this.o.remote, `${branch}:refs/heads/${branch}`], "gh");
+    const tracking = `refs/remotes/${this.o.remote}/${branch}`;
+    const onRemote = (await this.git(worktree, ["ls-remote", "--heads", this.o.remote, `refs/heads/${branch}`], "gh")).trim() !== "";
+    if (onRemote) {
+      await this.git(worktree, ["fetch", "-q", this.o.remote, `+refs/heads/${branch}:${tracking}`], "gh");
+      const opts = { cwd: worktree, kind: "git" as const, timeoutMs: 120_000 };
+      const contained = await this.run("git", ["merge-base", "--is-ancestor", tracking, "HEAD"], opts);
+      if (contained.code !== 0) {
+        const m = await this.run("git", ["merge", "--no-ff", "--no-edit", "-m", `Merge ${this.o.remote}/${branch} into ${branch}`, "-m", "Agent-Role: coordinator", tracking], opts);
+        if (m.code !== 0) {
+          await this.run("git", ["merge", "--abort"], opts);
+          throw new Error(`the remote branch ${branch} has commits that do not merge cleanly; not pushed (no force push, F04)`);
+        }
+      }
+    }
+    await this.git(worktree, ["push", "-q", this.o.remote, `${branch}:refs/heads/${branch}`], "gh");
   }
 }
