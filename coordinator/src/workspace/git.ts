@@ -96,14 +96,23 @@ export class GitWorkspace {
   }
 
   /** Paths changed in the worktree since the last commit, including untracked files. */
+  /**
+   * F07: every path a change touches, including the source of a rename or copy. `--no-renames` reports a rename
+   * as a deletion plus an addition; should git still print an R or C entry, its source (the next NUL field) is
+   * returned too, so a builder cannot move tests/y.ts to src/x.ts and pass the scope check.
+   */
   async changedFiles(worktree: string): Promise<string[]> {
-    const out = await this.git(worktree, ["status", "--porcelain", "--untracked-files=all", "-z"]);
+    const out = await this.git(worktree, ["status", "--porcelain", "--no-renames", "--untracked-files=all", "-z"]);
     const entries = out.split("\0").filter(Boolean);
     const files: string[] = [];
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i] ?? "";
       files.push(e.slice(3));
-      if (e[0] === "R" || e[0] === "C") i++; // skip the rename source
+      if (e[0] === "R" || e[0] === "C" || e[1] === "R" || e[1] === "C") {
+        i++;
+        const source = entries[i];
+        if (source) files.push(source);
+      }
     }
     return files;
   }

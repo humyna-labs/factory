@@ -361,7 +361,7 @@ coach reviews it before any "approved to run <sha>".
   (never rebases) commits it lacks, such as the owner's "Update branch" merge commit; the new PR of a restart closes
   the earlier one with a link, only when the coordinator opened it (author humyna-bot, head `factory/`). Tests:
   coordinator/test/no-force-push.test.ts, pre-push P5 cases in hooks/test/symlink-guard.test.ts.
-- [ ] **F07 Scope check sees the rename source.** S, high. `changedFiles` checks the source of a rename too (or uses
+- [x] **F07 Scope check sees the rename source.** S, high. `changedFiles` checks the source of a rename too (or uses
   `--no-renames`). Test: `R  src/x.ts <- tests/y.ts` is out of scope for the builder.
 - [ ] **F08 No quoted file names in the risk check.** S, high. `filesChangedFromBase` uses
   `git diff --no-renames --name-only -z`. Test: a non-ASCII path under a high-risk directory is high risk.
