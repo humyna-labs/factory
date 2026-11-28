@@ -363,7 +363,7 @@ coach reviews it before any "approved to run <sha>".
   coordinator/test/no-force-push.test.ts, pre-push P5 cases in hooks/test/symlink-guard.test.ts.
 - [x] **F07 Scope check sees the rename source.** S, high. `changedFiles` checks the source of a rename too (or uses
   `--no-renames`). Test: `R  src/x.ts <- tests/y.ts` is out of scope for the builder.
-- [ ] **F08 No quoted file names in the risk check.** S, high. `filesChangedFromBase` uses
+- [x] **F08 No quoted file names in the risk check.** S, high. `filesChangedFromBase` uses
   `git diff --no-renames --name-only -z`. Test: a non-ASCII path under a high-risk directory is high risk.
 - [ ] **F09 Instruction files denied at any depth.** S, high. R3 denies `CLAUDE.md`, `AGENTS.md`, `.gitignore`,
   `.claude/`, `settings/`, `hooks/`, `.githooks/`, `scripts/` at any depth, before the role allow rules. Test:

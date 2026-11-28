@@ -130,8 +130,13 @@ export class GitWorkspace {
     return true;
   }
 
+  /**
+   * F08: the paths the risk check rates. NUL-separated (`-z`), so a non-ASCII or unusual path is never returned in
+   * git's quoted form ("src/ai/\346\226\207.ts" would not match src/ai/**), and --no-renames, so both sides of a
+   * rename are rated.
+   */
   async filesChangedFromBase(worktree: string): Promise<string[]> {
-    return (await this.git(worktree, ["diff", "--name-only", `${this.base}...HEAD`])).split("\n").filter(Boolean);
+    return (await this.git(worktree, ["diff", "--no-renames", "--name-only", "-z", `${this.base}...HEAD`])).split("\0").filter(Boolean);
   }
 
   /**

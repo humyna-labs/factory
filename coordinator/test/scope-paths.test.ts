@@ -56,3 +56,32 @@ describe("F07: the scope check sees the source of a rename", () => {
     expect(await outOfScope(exec, "builder", wt, changed, [])).toEqual([]);
   });
 });
+
+describe("F08: the risk check sees unquoted paths", () => {
+  it("a non-ASCII path under a high-risk directory is listed as it is and rated high risk", async () => {
+    const { ws, wt } = await task();
+    write(wt, "src/ai/文件.ts", "export {};\n");
+    git(wt, "add", "-A");
+    git(wt, "commit", "-qm", "x");
+    const changed = await ws.filesChangedFromBase(wt);
+    expect(changed).toEqual(["src/ai/文件.ts"]);
+    const { assessRisk } = await import("../src/risk.ts");
+    expect(assessRisk(["risk:low"], changed, ["src/ai/**"]).risk).toBe("high");
+  });
+
+  it("both sides of a committed rename are rated: moving a high-risk file out is high risk", async () => {
+    const { ws, wt } = await task();
+    write(wt, "src/ai/key.ts", "export {};\n");
+    git(wt, "add", "-A");
+    git(wt, "commit", "-qm", "add");
+    git(wt, "push", "-q", "origin", "HEAD:main");
+    git(wt, "fetch", "-q", "origin");
+    mkdirSync(join(wt, "src/other"), { recursive: true });
+    git(wt, "mv", "src/ai/key.ts", "src/other/key.ts");
+    git(wt, "commit", "-qm", "move");
+    const changed = await ws.filesChangedFromBase(wt);
+    expect(changed.sort()).toEqual(["src/ai/key.ts", "src/other/key.ts"]);
+    const { assessRisk } = await import("../src/risk.ts");
+    expect(assessRisk(["risk:low"], changed, ["src/ai/**"]).risk).toBe("high");
+  });
+});
